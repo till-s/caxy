@@ -1,0 +1,38 @@
+<project name="caxy" default="dist" basedir=".">
+	<property name="src" location="caxy"/>
+	<property name="bld" location="build"/>
+	<property name="dst" location="dist"/>
+
+	<path id="classpath">
+		<pathelement location="."/>
+	</path>
+
+	<target name="init">
+		<tstamp/>
+		<mkdir dir="${bld}"/>
+	</target>
+
+	<target name="compile" depends="init" description="compile">
+		<property name="blax" refid="classpath"/>
+		<echo   message="My classpath ${blax}"/>
+		<javac includeantruntime="false" srcdir="${src}" destdir="${bld}" debug="true" debuglevel="lines,source">
+		<classpath refid="classpath"/> 
+		</javac>
+	</target>
+
+	<target name="dist" depends="compile" description="jar it up">
+		<mkdir dir="${dst}"/>
+		<jar jarfile="${dst}/caxy.jar">
+			<fileset dir="${bld}" />
+			<fileset dir="." includes="gnu/**"/>
+			<manifest>
+				<attribute name="Main-Class" value="caxy.TunnelHandler"/>
+			</manifest>
+		</jar>
+	</target>
+
+	<target name="clean" >
+		<delete dir="${bld}"/>
+		<delete dir="${dst}"/>
+	</target>
+</project>
