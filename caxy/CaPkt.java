@@ -54,8 +54,8 @@ class CaPkt {
 		return p;
 	}
 
-	public static int read(PktChannel chnl, ByteBuffer b)
-		throws IOException, PktChannel.IncompleteBufferReadException
+	public static int read(PktInpChannel chnl, ByteBuffer b)
+		throws IOException, PktInpChannel.IncompleteBufferReadException
 	{
 	int start = b.position();
 	int m_postsize;
@@ -197,8 +197,8 @@ class CaPkt {
 	public void set_m_cid(int v)       { set_i(M_CID_OFF      ,v); }
 	public void set_m_available(int v) { set_i(M_AVAILABLE_OFF,v); }
 
-	public void out(PktChannel chnl, SocketAddress peer)
-		throws IOException, PktChannel.IncompleteBufferWrittenException
+	public void out(PktOutChannel chnl, SocketAddress peer)
+		throws IOException, PktOutChannel.IncompleteBufferWrittenException
 	{
 		b.rewind();
 		chnl.putBuf(b, peer);
