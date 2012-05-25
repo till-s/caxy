@@ -38,15 +38,15 @@ class WrapHdr {
 		return b;
 	}
 
-	public void out(PktChannel chnl, SocketAddress peer)
-		throws IOException, PktChannel.IncompleteBufferWrittenException
+	public void out(PktOutChannel chnl, SocketAddress peer)
+		throws IOException, PktOutChannel.IncompleteBufferWrittenException
 	{
 		b.rewind();
 		chnl.putBuf(b, peer);
 	}
 
-	public void read(PktChannel chnl)
-		throws IOException, CaxyBadVersionException, PktChannel.IncompleteBufferReadException
+	public void read(PktInpChannel chnl)
+		throws IOException, CaxyBadVersionException, PktInpChannel.IncompleteBufferReadException
 	{
 	int version;
 
