@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.FileNotFoundException;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.StringTokenizer;
 import java.lang.Runtime;
@@ -16,7 +17,7 @@ import java.lang.Runtime;
 import gnu.getopt.Getopt;
 
 class TunnelHandler {
-	PktChannel        pktStream;
+	PktInpChannel     pktStream;
 	WrapHdr           wHdr;
 	ByteBuffer        buf;
 	InetSocketAddress [] udp_dst;
@@ -80,29 +81,13 @@ class TunnelHandler {
 		}
 	}
 
-	protected TunnelHandler(PktChannel pktStream_in)
+	protected TunnelHandler(PktInpChannel pktStream_in)
 	{
 		pktStream = pktStream_in;
 		wHdr      = new WrapHdr();
 		buf       = ByteBuffer.allocate(TCP_BUFSZ);
 		udp_dst   = new InetSocketAddress[0];
 		insaCache = new INSACache();
-	}
-
-	protected TunnelHandler(int port)
-		throws IOException
-	{
-		this ( new PktChannel( SocketChannel.open( new InetSocketAddress(port) ) ) );
-	}
-
-	protected TunnelHandler(String name)
-		throws FileNotFoundException
-	{
-		this (new PktChannel( (new FileInputStream(name)).getChannel()) );
-	}
-
-	protected TunnelHandler() {
-		this (new PktChannel((new FileInputStream(java.io.FileDescriptor.in)).getChannel()) );
 	}
 
 	public synchronized void addDstAddress(String s, int port)
@@ -149,7 +134,7 @@ class TunnelHandler {
 	}
 
 	public void handleStream(boolean inside, int debug)
-		throws IOException, WrapHdr.CaxyBadVersionException, PktChannel.IncompleteBufferReadException
+		throws IOException, WrapHdr.CaxyBadVersionException, PktInpChannel.IncompleteBufferReadException
 	{
 	int               i, nCa, opos = 0;
 	ClntProxy         clnt;
@@ -204,7 +189,8 @@ class TunnelHandler {
 	public static void main(String [] args)
 		throws FileNotFoundException, IOException
 	{
-	PktChannel            inStrm, outStrm;
+	PktInpChannel         inpStrm;
+	PktOutChannel         outStrm;
 	TunnelHandler         tunlHdlr;
 	int                   tunnel_port = CaxyConst.CA_PORT_BASE;
 	int                   server_port;
@@ -216,6 +202,7 @@ class TunnelHandler {
 	boolean               inside = false;
 	String              []alist  = new String[0];
 	String                str;
+	OutputStream          os     = null;
 
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
@@ -262,19 +249,23 @@ class TunnelHandler {
 		server_port = getIntEnv("EPICS_CA_SERVER_PORT",   CaxyConst.CA_SERVER_PORT);
 		rpeatr_port = getIntEnv("EPICS_CA_REPEATER_PORT", CaxyConst.CA_REPEATER_PORT);
 
+
 		if ( 0 == tunnel_port ) {
 			if ( g.getOptind() < args.length ) {
 				String [] cmd_args = Arrays.copyOfRange( args, g.getOptind(), args.length );
 				Process   p = Runtime.getRuntime().exec(cmd_args);
-				outStrm = new PktChannel((ByteChannel)Channels.newChannel(p.getOutputStream()));
-				inStrm  = new PktChannel((ByteChannel)Channels.newChannel(p.getInputStream()));
+				outStrm = new PktOutStrmChannel(( (os = p.getOutputStream())));
+				inpStrm = new PktInpChannel(Channels.newChannel(p.getInputStream()));
+				new Errlog(p.getErrorStream());
 			} else {
-				outStrm = PktChannel.getStdout();
-				inStrm  = PktChannel.getStdin();
+				outStrm = PktOutChannel.getStdout();
+				inpStrm = PktInpChannel.getStdin();
 			}
 		} else {
 			try {
-				inStrm = outStrm = PktChannel.open(inside, tunnel_port);
+				PktBidChannel bid = new PktBidChannel(inside, tunnel_port);
+				inpStrm = bid.getPktInpChannel();
+				outStrm = bid.getPktOutChannel();
 			} catch (IOException e) {
 				System.err.println("Unable to create TCP channel (on port " + tunnel_port + "): " + e);
 				throw(e);
@@ -285,7 +276,7 @@ class TunnelHandler {
 
 		try {
 
-			tunlHdlr = new TunnelHandler( inStrm );
+			tunlHdlr = new TunnelHandler( inpStrm );
 
 			if ( inside ) {
 				int i;
@@ -299,7 +290,7 @@ class TunnelHandler {
 				}
 
 				/* read an initial packet which tells us what repeater port the 'outside' is using */
-				wHdr.read( inStrm );
+				wHdr.read( inpStrm );
 				
 				new RepProxy( wHdr.get_cport(), rpeatr_port);
 
@@ -321,14 +312,14 @@ class TunnelHandler {
 				System.err.println("Must set EPICS_CA_ADDR_LIST or use '-a' in '-I' mode\n");
 				System.exit(1);
 			}
-		
+
 			while ( true ) {
 				tunlHdlr.handleStream(inside, debug);
 			}
 		} catch (IOException e) {
 			e.printStackTrace(System.err);
 			System.err.println("Broken connection?");
-		} catch (PktChannel.IncompleteBufferReadException e) {
+		} catch (PktInpChannel.IncompleteBufferReadException e) {
 			e.printStackTrace(System.err);
 			System.err.println("Broken connection?");
 		} catch (WrapHdr.CaxyBadVersionException e) {
