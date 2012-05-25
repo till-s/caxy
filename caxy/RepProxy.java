@@ -10,7 +10,7 @@ class RepProxy extends ClntProxy {
 	public RepProxy(int remote_rport, int rport)
 		throws IOException
 	{
-		super(OUTSIDE, CaxyConst.INADDR_LOOPBACK, remote_rport, 0);
+		super(INSIDE, CaxyConst.INADDR_LOOPBACK, remote_rport, 0);
 
 		new RepSubscriber( rport );
 	}
@@ -72,7 +72,7 @@ class RepProxy extends ClntProxy {
 					break;
 				}
 				try {
-					sleep( sinceLastRepSeenMs() < 120000L ? 120000L : 10000L );
+					sleep( sinceLastRepSeenMs() < 130000L ? 120000L : 10000L );
 				} catch ( java.lang.InterruptedException e ) {
 					System.err.println("repSubscriber was interrupted (terminating): " + e );
 					break;
