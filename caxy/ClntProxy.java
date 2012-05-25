@@ -9,7 +9,7 @@ import java.util.LinkedList;
 import java.util.ListIterator;
 
 class ClntProxy extends Thread {
-	protected static  PktChannel        pktStream;
+	protected static  PktOutChannel     pktStream;
 	protected         DatagramChannel   udpChnl;
 	protected         ByteBuffer        buf;
 	protected         WrapHdr           wHdr;
@@ -36,7 +36,7 @@ class ClntProxy extends Thread {
 	protected static LinkedList<ClntProxy> list = new LinkedList<ClntProxy>();
 
 
-	public static synchronized void initClass(PktChannel pktStream_in, int debug_in)
+	public static synchronized void initClass(PktOutChannel pktStream_in, int debug_in)
 	{
 		pktStream = pktStream_in;
 		debug     = debug_in;
@@ -82,13 +82,14 @@ class ClntProxy extends Thread {
 
 	boolean
 	handleUdp()
-		throws IOException, PktChannel.IncompleteBufferWrittenException
+		throws IOException, PktOutChannel.IncompleteBufferWrittenException
 	{
 	InetSocketAddress udp_src;
 	int               skip, nCa;
 	int               udp_src_a, udp_src_p;
 	boolean           rep_seen = false;
 	boolean           need_whdr_dump = (debug & CaxyConst.DEBUG_UDP) != 0;
+	boolean           need_whdr = true;
 
 		buf.clear();
 
@@ -128,8 +129,6 @@ class ClntProxy extends Thread {
 
 		synchronized( pktStream ) {
 
-			wHdr.out(pktStream, null);
-
 			while ( buf.remaining() > 0 ) {
 
 				CaPkt caPkt = CaPkt.get(buf);
@@ -145,6 +144,8 @@ class ClntProxy extends Thread {
 							need_whdr_dump = false;
 						}
 
+						if ( skip != 0 )
+							System.err.println("vvvvv FOLLOWING MESSAGE WILL BE SKIPPED vvvvv");
 						caPkt.dump( debug );
 					}
 				}
@@ -152,6 +153,12 @@ class ClntProxy extends Thread {
 				rep_seen = rep_seen || ( CaPkt.REPEATER_CONFIRM == skip );
 
 				if ( 0 == skip ) {
+
+					if ( need_whdr ) {
+						wHdr.out(pktStream, null);
+						need_whdr = false;
+					}
+
 					caPkt.out(pktStream, null);
 				}
 			}
