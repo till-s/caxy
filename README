@@ -1,0 +1,564 @@
+CA Tunneling with CAXY
+----------------------
+
+Till Straumann <strauman@slac.stanford.edu>, 2012.
+
+Introduction
+------------
+
+The CA protocol uses both, TCP and UDP messages.
+While it is easy to tunnel the former using the
+powerful port-forwarding features of SSH it is
+not straightforward to tunnel UDP messages.
+
+This README explains how to set up a TCP tunnel
+and documents the 'caxy' proxy software that
+encapsulates (and modifies) CA-UDP messages for
+tunneling them via TCP.
+
+TCP Tunnel
+----------
+
+The most flexible way for tunneling CA TCP connections
+is using ssh's SOCKS proxy implementation together with
+a SOCKS wrapper implementation like tsocks or dante
+(client).
+
+Assume we have two hosts 'inside' and 'outside'.
+'inside' is directly connected to the CA network,
+i.e., it can directly communicate with EPICS IOCs,
+receives their CA search replies, beacons etc.
+
+The 'outside' host may only connect to the CA
+network via ssh.
+
+On the 'outside' machine execute
+
+ssh -D 1080 user@inside
+
+This sets up a SOCKS proxy on the standard port
+1080. The ssh proxy - in combination with a
+so called 'proxifier' wrapper library - can
+transparently tunnel TCP connections. E.g., if
+you issue
+
+tsocks telnet another_inside_machine
+
+Then you can transparently telnet over ssh:
+
+1)
+tsocks library intercepts the 'connect(another_inside_machine:23)'
+system call and connects to the proxy host instead (e.g.,
+'localhost:1080').
+2)
+tsocks library negotiates with SOCKS proxy
+(1080 port on localhost talks over encrypted channel
+with sshd on 'inside') to create a connection to
+'another_inside_machine:23'.
+3)
+sshd creates a new (*not encrypted*) connection from 'inside'
+to 'another_inside_machine:23' and forwards all further traffic
+going through the intercepted connection (steps 1+2) to/from
+this new one.
+
+4) 
+tsocks library returns from 'connect' with the
+user's socket now apparently connected to 
+'another_inside_machine:23' (via 'proxy_host:proxy_port').
+5) 
+user/client talks to socket as if a direct connection
+existed.
+
+Consult tsocks or dante documentation for how to set up
+those packages (its really easy; just have to define
+routes that use the proxy instead of trying to establish
+direct connections).
+
+Native SOCKS Support for EPICS
+- - - - - - - - - - - - - - - -
+
+A patch 'base-<vers>-socks-proxy.diff' to EPICS base is
+available which adds SOCKS support to EPICS. This means
+that you can execute CA clients without the need for
+proxifier software (free versions of such software seems
+hard to come by under windows). You also don't have to
+worry about learning how to set up the proxifier.
+
+The patch adds a new function 'epicsConnectViaProxy()'
+which is a plug-in replacement for 'connect(2)' but
+knows how to negotiate with a SOCKS proxy server when
+establishing a connection.
+
+The patch also replaces the call to 'connect()' in the
+CA client library with a call to epicsConnectViaProxy().
+
+You can define a proxy by setting the environment 
+variable 'EPICS_SOCKS_PROXY' to point to your proxy
+server. If you use an ssh tunnel with 'dynamic port
+forwarding' then the ssh client (running on your machine)
+is the SOCKS proxy server. Hence you just need to
+
+export EPICS_SOCKS_PROXY=localhost
+
+and you're done. Easy enough, isn't it? If the 
+EPICS_SOCKS_PROXY variable is not defined then 
+epicsConnectViaProxy() behaves just like an ordinary
+'connect()', i.e., a direct connection to the target
+is established.
+
+Note: If your CA libraries are dynamic libraries then
+you *dont* have to rebuild all your CA applications!
+Just patch EPICS base and rebuild base. Nothing in
+the API that would compromise binary compatibility
+is changed by this patch.
+
+UDP Tunnel
+----------
+This is trickier. While SOCKS-5 does define support for
+the UDP protocol this is not implemented by ssh. Hence,
+tunneling CA-UDP does not work out of the box.
+
+An alternative to the 'caxy' program would have been a more
+generic proxy that handles SOCKS-5/UDP and tunnels
+the UDP frames via TCP/SSH. However, SOCKS-5/UDP
+only supports UDP 'connections' that originate
+at the SOCKS client (i.e., frames being sent to a
+peer and the peer repeating back to the sender/client).
+Hence, even with SOCKS-5/UDP it would not be possible to
+relay CA beacons which originate at EPICS IOCs.
+
+This is where the 'caxy' program comes in. This program
+wraps CA-UDP messages and ships them through a dedicated
+TCP tunnel (which is set up in the usual way with ssh).
+
+The same program is executed (with different flags) on
+the 'inside' and 'outside' machines, respectively.
+
+'caxy' on 'outside' machine:
+A UDP socket on port CA_SERVER_PORT (overrideable with the
+EPICS_CA_SERVER_PORT env-var) listens for incoming CA packets.
+The packet is then written to a TCP connection along with
+wrapping information that identifies the sender of the packet.
+
+ascii-art legend:
+
+UDP communication  ::      Machine-network boundary  - - - - -
+
+TCP communication  ||      IPC boundary              . . . . .
+
+TCP encrypted      XX      IPC between ssh/caxy      (**)
+
+UDP port          |__|     TCP port                  (  )
+
+----------------------------------------------------
+        
+                CA-client
+                  ____
+                 |    | UDP port
+- - - - - - - - -     - - - - - - - - - - - - - - -
+                  : ^       
+                  : :
+                CA_SEARCH               'outside'
+                  : :                    network
+          request : : reply                       
+                  V :                              
+- - - - - - - - -    - - - - - - - - - - - - - - - -
+                |____| UDP port 5064 
+  outside         ::   (CA srvr port)
+  CAXY            ::
+             encaps/decaps              'outside'
+        	      ||                      host
+. . . . . . . . .(**) . . . . . . .
+  SSH (clnt)      ||
+                 (  )
+- - - - - - - - -   - - - - - - - - - - - - - - - - 
+                  XX
+                  XX secure TCP         Internet
+                  XX Channel
+- - - - - - - - -   - - - - - - - - - - - - - - - -
+                 (  )
+  SSH (srvr)      ||
+. . . . . . . . .(**) . . . . . . .
+                  ||
+  inside    decaps/encaps               'inside'
+  CAXY            ::                      host
+                 _::_
+                |    | UDP port
+- - - - - - - - -    - - - - - - - - - - - - - - - 
+                 :  ^
+                 :  :
+               CA_SEARCH                'inside'
+         request :  : reply          (CA) network
+                 V  :
+- - - - - - - - - - - - - - - - - - - - - - - - - -
+                |___| UDP port 5064
+        
+              CA server (IOC)           EPICS IOC
+---------------------------------------------------
+
+
+'caxy -I' on 'inside' machine:
+receives wrapped UDP messages from TCP tunnel, unwraps
+and sends to all IOCs listed in EPICS_CA_ADDR_LIST
+(as defined for caxy running 'inside').
+
+For each 'sender' (in the outside world) the
+'inside' caxy program maintains a UDP socket as a proxy
+so that replies arriving at that socket can be sent
+back (via the TCP tunnel) to the 'sender' of
+a request on the 'outside'.
+
+When UDP messages arrive at a proxy socket then
+'inside' retrieves the 'sender' address information
+from a trivial 'database', wraps the UDP message
+together with this info and stuffs it into the TCP
+tunnel.
+
+'outside' machine:
+receives encapsulated UDP message, unwraps, retrieves
+'sender' address and sends back to 'sender'.
+
+CA SEARCH REPLY Hack
+- - - - - - - - - - -
+The CA protocol (since V48) support a feature where
+the IOC sending a search reply embeds its own address
+into the reply message. If this embedded address is
+undefined then the CA client assumes the sender
+of the reply *is* the IOC. Obviously, this would not
+work with this type of proxy (w/o resorting to
+tricks that intercept system calls). Therefore, caxy
+ensures that the server address is always embedded
+into search replies. Note that caxy does not work
+with very old (pre-V48) IOCs and/or clients.
+
+Beacons
+-------
+In a simliar way, CA repeater traffic is proxied and tunneled.
+The 'inside' caxy program registers with a caRepeater that
+must be running on the 'inside' machine (caxy does not attempt
+to launch a repeater).
+Any traffic received from the 'inside' repeater is forwarded
+to the outside and sent to the repeater port on the outside 
+machine (if a caRepeater is running on the outside machine then
+all subscribed clients will receive beacons).
+
+---------------------------------------------------
+               CA-server
+                (IOC)
+                 ___
+                |   | UDP port
+- - - - - - - -      - - - - - - - - - - - - - - -
+                  :
+                  :                    'inside'
+                CA-BEACON             (CA) network
+                  :
+                  V 
+- - - - - - - - -    - - - - - - - - - - - - - - - -
+                |___|  UDP port 5065 
+  inside          :   (repeater port)  'inside'
+  REPEATER       _::_                    host  
+                |    |                        
+. . . . . . . . .     . . . . . . . 
+                  :^
+           beacon ::  subscription     'loopback'
+                  V:                     network
+. . . . . . . . .     . . . . . . . 
+                |____| 
+                  : 
+  inside          : 
+  CAXY          encaps                  'inside'
+        	      |                       host
+. . . . . . . . .(**) . . . . . . . 
+  SSH (srvr)      | 
+                 (  )
+- - - - - - - - -   - - - - - - - - - - - - - - - - 
+                  X 
+                  X  secure TCP         Internet
+                  X  Channel
+- - - - - - - - -   - - - - - - - - - - - - - - - -
+                 (  )
+  SSH (clnt)      | 
+. . . . . . . . .(**) . . . . . . . 
+                  | 
+  outside       decaps                  'outside'
+  CAXY            :                       host
+                 _:__
+                |    | UDP port
+. . . . . . . . .     . . . . . . . 
+                 :
+               BEACON                   'loopback'
+                 :                       network
+                 V    
+. . . . . . . . .     . . . . . . . 
+                |___| UDP port 5065
+  outside                               'outside'
+  REPEATER       :::                       host   
+. . . . . . . .  ::: . . . . . . .   
+                 VVV Fanned-out beacons
+- - - - - - - - - - - - - - - - - - - - - - - - - 
+             CA Clients
+---------------------------------------------------
+
+
+Command-line Arguments and Environment Variables
+------------------------------------------------
+
+caxy supports the following options/switches:
+
+ -I          Run in 'inside' mode. If this switch is not
+             given then run in 'outside' mode.
+
+ -a 'ca_addr_list' Like EPICS_CA_ADDR_LIST env-var. Multiple
+             -a options and the env-var are combined into
+             a single list. Only effective in 'inside' mode.
+
+ -d <flags>  Enable debugging messages. <flags> is a
+             bit-set composed of
+                   1: dump UDP messages
+                   2: dump TCP messages
+                   8: suppress beacon messages
+
+ -p <tcp_port> Override TCP port to use for tunneling UDP. If this switch
+             is not given then the value CA_PORT_BASE (5056) is
+             used (corresponds to an old CA protocol that would not
+             work with caxy anyways).
+
+             NOTES: This switch ONLY applies to the TCP, not the UDP
+                    port.
+
+                    TCP port MUST match the ports forwarded by ssh.
+                    (However, if the TCP port is proxied with SOCKS,
+                    too, then this is transparent; in this case the -p
+                    settings on the inside must match the outside.)
+
+             If the port number is 0 then caxy uses STDIO for the
+             tunneled channel instead of a forwarded TCP connection.
+             The advantage of this approach is that the vanilla
+             STDIO of ssh can be used w/o the extra need of a forwarded
+             connection and the need for an open TCP port on the
+             'inside' machine which may collide with other users.
+
+***FIXME
+             The only disadvantage is that it is not trivial to 
+             nail two pipes together which connect caxy to the
+             ssh client. This is especially true under windows.
+
+             The easiest method uses a named pipe, e.g., 'mypipe':
+
+             caxy < mypipe -p0 | ssh -C -D 1080 user@inside  caxy -I -p0  > mypipe
+
+             The 'catun.pl' and 'catun.sh' scripts illustrate
+             alternative methods avoiding named pipes.
+***FIXME
+
+EPICS_CA_SERVER_PORT: Port where to listen for UDP messages ('outside'
+             mode). In 'inside' mode, the value of this variable
+             defines the default port where UDP messages are sent
+             (for addresses in the ca-address list that don't
+             explicitly specify a port).
+
+EPICS_CA_REPEATER_PORT: Port where to send repeater messages. Note
+             that 'inside' and 'outside' values may differ.
+
+EPICS_CA_ADDR_LIST: In 'inside' mode: list of addresses where UDP messages
+             are sent to. Note that this variable has no effect 
+             in 'outside' mode. The addresses in this list are 
+             appended to any '-a' options given on the command line.
+
+NOTE: The server and repeater port definitions may differ on 
+      the inside and outside. The tunnel handles this
+      transparently (but the settings must of course be correct,
+      i.e., the values for caxy on the 'outside' must match the
+      settings for CA clients and outside-caRepeater and the values
+      for caxy on the 'inside' must match the settings for CA
+      servers and caRepeater on the 'inside'). This feature
+      is quite useful if the 'inside' CA network uses non-standard
+      ports. It is only necessary to communicate these non-standard
+      settings to caxy on the 'inside' (e.g, via a acript that
+      sets the relevant environment variables). On the 'outside'
+      caxy and the CA-clients do not have to replicate the non-standard
+      setting but may just use the default ones.
+
+      The EPICS_CA_ADDR_LIST or '-a' option *must* be set on
+      the 'inside'. There is no logic to auto-detect broadcast
+      addresses etc.
+
+Examples:
+
+###FIXME
+
+Simple Example:
+
+      ssh -t -D 1080 inside caxy -I -a a.b.c.255
+
+	  # from now on all programs are 'socksified'
+
+      . socksify
+      caxy &
+      caget some_PV
+
+      # corresponding dante.conf routes (only 'from' lines):
+      ...
+      # caxy TCP connection
+      from: 0.0.0.0/0 to: 127.0.0.1/32 port 5056 via: 127.0.0.1 port = 1080
+      ...
+      # all tcp connections to a.b.c.0/24
+      from: 0.0.0.0/0 to: a.b.c.0/24 via: 127.0.0.1 port = 1080
+      ...
+
+caxy TCP can also be tunneled explicitly via ssh:
+
+      # CA on a.b.c.255 subnet uses port 5066
+
+      ssh -t -D 1080 -L 5056:localhost:5056 inside caxy -I -a a.b.c.255:5066
+
+      # caxy on localhost is *not* socksified but CA clients are:
+
+      caxy &
+      . socksify
+      caget some_PV
+
+      # dante.conf would only need a route for a.b.c.0/24 in this setup
+
+multihop tunnel to 'inside' via 'hop':
+
+      # Note that anyone on 'hop' can possibly use the SOCKS proxy to 'inside'
+      # If this is a problem then a more sophisticated, encrypted tunnel
+      # must be set up. Also (and in the above examples alike), anyone
+      # on 'outside' can use the proxy port 1080.
+
+      ssh -tt -L 1080:localhost:1080 hop ssh -tt -D 1080 inside caxy -I -a a.b.c.255
+
+      . socksify
+      caxy &
+      caget some_PV
+
+
+      # a better approach to set up a multihop tunnel is using ssh's
+      # 'ProxyCommand'. This avoids any intermediate port on the 
+      # gateway/'hop' machine. It is more convenient to set up a 'config' file.
+      # The example uses command line options just to illustrate
+      # the setup:
+
+      ssh -t -D 1080 -o 'ProxyCommand=ssh hop /usb/bin/nc %h %p' inside caxy -I -a a.b.c.255
+
+CAJ and CSS
+===========
+
+It is possible to tunnel CA for client applications which
+use the 'CAJ' java implementation of the CA protocol such as
+the CSS suite.
+
+The 'caxy' proxy must be started exactly in the same way
+as described above.
+
+However, 'socksify-ing' the JVM may or may not work on
+different platforms. Therefore, we recommend a different
+approach:
+
+Some network-related java classes already support connections
+via a SOCKS proxy. Hence, this built-in support can be leveraged.
+When setting the system property 'socksProxyHost' then all
+TCP connections established by 'Socket' objects are transparently
+going through the proxy.
+
+Unfortunately, the 'SocketChannel' class which is used by CAJ
+(version 1.1.7) completely ignores this built-in support.
+
+A patch to CAJ has been developed (and submitted to the CAJ
+maintainers, so it will hopefully be incorporated into
+future CAJ releases) which adds the necessary support for
+SOCKS. (Consult the 'ProxiedSocketChannel.java' file for
+more detail.) With this modified CAJ (and the tunnel set
+up as described in the previous sections) you could e.g.,
+launch an application as follows:
+
+java -DsocksProxyHost=localhost  someCAJApp  myPV
+
+The patch to CAJ serves the same purpose (but targeting
+the java implementation of CA) as the 'base-<vers>-socks-proxy.diff'
+to the C/C++ version of EPICS base.
+
+Eclipse/CSS
+===========
+Eclipse also has built-in support for SOCKS proxies (you
+can define a proxy under Preferences-General-Network_Connections)
+but out of the box this does not interplay with
+(patched) CAJ or the java built-in SOCKS support in the
+Socket class.
+
+Luckily it is just a matter of installing a small plugin
+to glue these pieces together. Hence, you need the following
+ingredients:
+
+- obtain or build patched CAJ
+- make sure eclipse/CSS uses the patched CAJ (e.g., by installing over
+  the vanilla CAJ that comes with CSS)
+- install 'org.eclipse.scout.net' plugin for eclipse
+
+Now you are able to tunnel your CA connections:
+
+- start ssh tunnel and caxy as described above (make sure ssh is started
+  with the '-D 1080' option).
+- define SOCKS proxy 'localhost:1080' in eclipse/CSS
+  Preferences-General-Network_Connections 
+
+It is worthwhile noting that the patched CAJ as well as
+eclipse with the 'org.eclipse.scout.net' plugin continue
+working normally when not told to use a proxy (e.g., when
+you plug your laptop into an 'inside' network).
+You only must remember to disable the proxy in the 
+'Network_Connection' settings and/or remove the
+'socksProxyHost' system property.
+
+CAS - Channel Access Security Issues
+====================================
+If CAS is enabled and configured on an IOC then you may be denied
+access to a PV. Note that there is no warning or error, the PV just
+seems to be unreachable or unwriteable.
+
+To understand the issue here it is necessary to know that CAS
+authentication is based on a 'user name' and a 'host name'. These
+names are retrieved on the machine where the CA client is running
+and transmitted to the IOC 'inside' the CA protocol.
+Hence, it is irrelevant from which machine the CA/TCP connection
+originates (the IOC could also check that but it doesn't) which
+in our case would be the 'inside' machine (which probably is
+'allowed' by CAS rules). 
+
+An example: When you are logged into your laptop 'mymachine'
+as 'Bob' then these credentials ('Bob/mymachine') are transferred
+by the CA protocol and will be checked by the IOC against its
+CAS rules.
+
+Therefore, you must convince the IOC administrator(s) to add
+your name/machine to these rules.
+
+CATUN Protocol Versions
+-----------------------
+The first version of the UDP tunnel 'protocol' wrapped
+each individual CA message before shipping it through
+the stream/TCP connection. On the receiving end of the
+serialized stream, each CA message would be unwrapped
+and sent out in a UDP datagram. This means that even though
+the CA client might have packed multiple CA messages 
+into a single UDP datagram, once this datagram was shipped
+through the tunnel (using the CATUN V1 protocol) it was
+broken up into multiple packets, each one holding only
+a single CA message.
+
+CATUN protocol V2 remedies this and wraps an entire
+UDP datagram so that the original packet structure is
+preserved.
+
+The 'inside' caxy algorithm is backwards compatible, i.e.,
+if an 'outside' caxy which doesn't implement V2 yet connects
+then the 'inside' falls back on the V1 protocol.
+
+However, if the 'inside' does not support V2 yet then the
+'outside' caxy may be started with the '-v1' option
+instructing it to use protocol version V1.
+
+Note that the java version of caxy ONLY support protocol
+version 2. Hence it is not possible to co-operate
+with older versions of the C implementation.
