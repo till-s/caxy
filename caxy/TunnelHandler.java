@@ -294,6 +294,8 @@ class TunnelHandler {
 				
 				new RepProxy( wHdr.get_cport(), rpeatr_port);
 
+				System.err.println("CAXY -- tunnel now established");
+
 			} else {
 
 				tunlHdlr.addDstAddress("0.0.0.0",0);
