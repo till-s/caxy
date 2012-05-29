@@ -20,7 +20,13 @@
 		</javac>
 	</target>
 
-	<target name="dist" depends="compile" description="jar it up">
+	<target name="copyresources" depends="compile">
+		<copy todir="${bld}/caxy">
+			<fileset file="./JCALibrary.properties"/>
+		</copy>
+	</target>
+
+	<target name="dist" depends="copyresources" description="jar it up">
 		<mkdir dir="${dst}"/>
 		<jar jarfile="${dst}/caxy.jar">
 			<fileset dir="${bld}" />
