@@ -3,8 +3,8 @@ INTRODUCTION
 
 caxy is now also available as an implementation in java.
 This means that you don't have to compile anything but
-you can use the pre-compiled classes on any platform supporting
-java.
+you can use the pre-compiled application on any platform
+supporting java (>= 1.6).
 
 For general information about caxy and how to use it
 consult the general README.
@@ -26,7 +26,7 @@ NOTE about ProxifiedSocketChannel.java
 RUNNING java caxy
 -----------------
 
-caxTo run java caxy you need jvm-1.6 and you start it
+caxTo run java caxy you need jvm >= 1.6 and you start it
 
 java -jar <path>/caxy.jar
 
@@ -70,7 +70,8 @@ To clean up select the 'clean' target
 
 ACKNOWLEDGEMENT/LICENSE
 -----------------------
-java caxy uses the GNU 'Getopt' class which is released under the LGPL
-and distributed in source (and compiled) form with caxy.
-When using the pre-built binaries then the respective terms of the LGPL
-apply. Consult the license for details.
+java caxy uses the GNU 'Getopt' class which is released
+under the LGPL and distributed in source (and compiled)
+form with caxy.
+When using the pre-built binaries then the respective terms
+of the LGPL apply. Consult the license for details.
