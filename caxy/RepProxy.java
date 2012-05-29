@@ -5,12 +5,14 @@ import java.io.IOException;
 
 class RepProxy extends ClntProxy {
 
-	private long        lastRepSeen;
+	private long        lastRepSeen = 0;
 
 	public RepProxy(int remote_rport, int rport)
 		throws IOException
 	{
 		super(INSIDE, CaxyConst.INADDR_LOOPBACK, remote_rport, 0);
+
+		start( RepProxy.class );
 
 		new RepSubscriber( rport );
 	}

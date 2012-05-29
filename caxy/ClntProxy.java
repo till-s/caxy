@@ -42,6 +42,16 @@ class ClntProxy extends Thread {
 		debug     = debug_in;
 	}
 
+	public void start(Class c)
+	{
+		/* Start only if we are an instance of 'c'.
+		 * If we are a superclass then start() should
+		 * be executed from the subclass constructor.
+		 */
+		if ( this.getClass().equals( c ) )
+			super.start();
+	}
+
 	public ClntProxy(int port)
 		throws IOException
 	
@@ -64,7 +74,7 @@ class ClntProxy extends Thread {
 
 		abuf     = new int[2];
 
-		start();
+		start( ClntProxy.class );
 	}
 
 	public ClntProxy(int clnt_address, int clnt_port)
