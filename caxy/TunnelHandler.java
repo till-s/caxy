@@ -13,8 +13,73 @@ import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.StringTokenizer;
 import java.lang.Runtime;
+import java.util.Properties;
 
 import gnu.getopt.Getopt;
+
+class CaxyProp extends Properties {
+
+		String jcaCtxtName;
+		String jcaDfltCtxtName;
+
+		public CaxyProp(String fn, String jcaDfltCtxtName, String jcaCtxtName)
+			throws IOException
+		{
+			if ( null != fn ) {
+				load( new FileInputStream( fn ) );
+			}
+			this.jcaCtxtName     = jcaCtxtName;
+			this.jcaDfltCtxtName = jcaDfltCtxtName;
+		}
+
+		public String getJcaProperty(String key, String def)
+		{
+			if ( null != jcaCtxtName ) {
+				key = new String( jcaCtxtName + "." +  key );
+			} else if ( null != jcaDfltCtxtName ) {
+				key = new String( jcaDfltCtxtName + "." + key );
+			} else {
+				key = new String( "jca." + key );
+			}
+			return this.getProperty( key, def );
+		}
+
+		public String getJcaProperty(String key)
+		{
+			return this.getJcaProperty(key, null);
+		}
+
+		public String getProperty(String key, String def)
+		{
+		String rval;
+			if ( null != ( rval = System.getProperty( key ) ) ) {
+				return rval;
+			}
+			if ( null != ( rval = getProperty( key ) ) )
+				return rval;
+			return def;
+		}
+
+		public String getProperty(String key)
+		{
+			return this.getProperty( key, null );
+		}
+
+		int getJcaIntProperty(String key, int def)
+		{
+		String str;
+			if ( (str = getJcaProperty(key)) != null ) {
+				try {
+					return Integer.parseInt(str);
+				} catch ( java.lang.NumberFormatException e ) {
+					System.err.println("Unable to parse "+key+" property");
+					System.exit(1);
+				}
+			}
+			return def;
+		}
+}
+
 
 class TunnelHandler {
 	PktInpChannel     pktStream;
@@ -25,6 +90,8 @@ class TunnelHandler {
 	INSACache         insaCache;
 
 	static final int  TCP_BUFSZ = 10000;
+
+	public static final int TUNNEL_PORT_DFLT = 0;
 
 	class INSAEntry {
 		protected int                     addr, port;
@@ -126,7 +193,7 @@ class TunnelHandler {
 			try {
 				return Integer.parseInt(str);
 			} catch ( java.lang.NumberFormatException e ) {
-				System.err.println("Unable to parse EPICS_CA_SERVER_PORT env-var");
+				System.err.println("Unable to parse "+env_var+" env-var");
 				System.exit(1);
 			}
 		}
@@ -192,17 +259,21 @@ class TunnelHandler {
 	PktInpChannel         inpStrm;
 	PktOutChannel         outStrm;
 	TunnelHandler         tunlHdlr;
-	int                   tunnel_port = CaxyConst.CA_PORT_BASE;
+	int                   tunnel_port = TUNNEL_PORT_DFLT;
+	String                env_addrlst = null;
 	int                   server_port;
 	int                   rpeatr_port;
 	int                   debug  = 0;
 	WrapHdr               wHdr   = new WrapHdr();
-	Getopt                g      = new Getopt("caxyj", args, "a:d:hIp:");
+	Getopt                g      = new Getopt("caxyj", args, "a:d:hIJ:p:P:");
 	int                   opt;
 	boolean               inside = false;
 	String              []alist  = new String[0];
-	String                str;
 	OutputStream          os     = null;
+	CaxyProp              props  = null;
+	String                propFn = null;
+	String                jcaPre = null;
+	String                jcaDPre= null;
 
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
@@ -240,18 +311,57 @@ class TunnelHandler {
 					inside = true;
 				break;
 
+				case 'j':
+					jcaDPre = g.getOptarg();
+				break;
+
+				case 'J':
+					jcaPre = g.getOptarg();
+				break;
+
+				case 'P':
+					propFn = g.getOptarg();
+				break;
+
 				default:
 					System.err.println("Unknown option '" + (char)opt + "': ignoring");
 				break;
 			}
 		}
 
-		server_port = getIntEnv("EPICS_CA_SERVER_PORT",   CaxyConst.CA_SERVER_PORT);
-		rpeatr_port = getIntEnv("EPICS_CA_REPEATER_PORT", CaxyConst.CA_REPEATER_PORT);
+		try {
+			props = new CaxyProp( propFn, jcaDPre, jcaPre );
+		} catch ( Exception e ) {
+			System.err.println("Illegal argument to -P; unable to load properties");
+			System.err.println(e);
+			System.exit(1);
+		} finally {
+			propFn = null;
+			jcaPre = null;
+		}
+
+		if (     null == props.getProperty( "jca.use_env" )
+		      && null == props.getJcaProperty( "jca.use_env" )
+              || Boolean.valueOf( props.getProperty( "jca.use_env" ) )
+              || Boolean.valueOf( props.getJcaProperty( "jca.use_env" ) )
+		   )
+		{
+			server_port = getIntEnv("EPICS_CA_SERVER_PORT",   CaxyConst.CA_SERVER_PORT);
+			rpeatr_port = getIntEnv("EPICS_CA_REPEATER_PORT", CaxyConst.CA_REPEATER_PORT);
+			if ( inside ) {
+				env_addrlst = System.getenv("EPICS_CA_ADDR_LIST");
+			}
+		} else {
+			server_port = props.getJcaIntProperty( "server_port",   CaxyConst.CA_SERVER_PORT );
+			rpeatr_port = props.getJcaIntProperty( "repeater_port", CaxyConst.CA_REPEATER_PORT );
+			if ( inside ) {
+				env_addrlst = props.getJcaProperty( "addr_list" );
+			}
+		}
 
 
 		if ( 0 == tunnel_port ) {
-			if ( g.getOptind() < args.length ) {
+			if ( g.getOptind() < args.length && ! inside ) {
 				String [] cmd_args = Arrays.copyOfRange( args, g.getOptind(), args.length );
 				Process   p = Runtime.getRuntime().exec(cmd_args);
 				outStrm = new PktOutStrmChannel(( (os = p.getOutputStream())));
@@ -280,10 +390,10 @@ class TunnelHandler {
 
 			if ( inside ) {
 				int i;
-				if ( (str = System.getenv("EPICS_CA_ADDR_LIST")) != null ) {
+				if ( null != env_addrlst ) {
 					alist = Arrays.copyOf( alist, alist.length + 1 );
-					alist[alist.length-1] = str;
-					str   = null;
+					alist[alist.length-1] = env_addrlst;
+					env_addrlst           = null;
 				}
 				for (i=0; i<alist.length; i++) {
 					tunlHdlr.addDstAddresses(alist[i], server_port);
@@ -325,9 +435,10 @@ class TunnelHandler {
 			e.printStackTrace(System.err);
 			System.err.println("Broken connection?");
 		} catch (WrapHdr.CaxyBadVersionException e) {
-			System.err.println("Bad CATUN protocol version: " + e.badVersion);
+			System.err.println( e.getMessage() );
 			e.printStackTrace(System.err);
 		} catch ( Throwable e ) {
+			System.err.println( e.getMessage() );
 			e.printStackTrace(System.err);
 		}
 		System.exit(1);
@@ -336,7 +447,7 @@ class TunnelHandler {
 	static void usage(String nm)
 	{
 
-	System.err.format( "Usage: %s [-h] [-I -a addr_list] [-d debug_flags] [-p tunnel_port]\n\n", nm);
+	System.err.format( "Usage: %s [-h] [-I -a addr_list] [-d debug_flags] [-p tunnel_port] [-j default prefix] [-J prefix] [-P properties file] [ [--] cmd [ args ] ]\n\n", nm);
 
 	System.err.format( "  OPTIONS:\n\n");
 
@@ -344,7 +455,7 @@ class TunnelHandler {
     System.err.format( "                      on the 'outside'.\n\n");
 
 
-    System.err.format( "       -p tunnel_port TCP port to use for the tunnel (defaults to: %d).\n", CaxyConst.CA_SERVER_PORT);
+    System.err.format( "       -p tunnel_port TCP port to use for the tunnel (defaults to: %d).\n", TUNNEL_PORT_DFLT);
 	System.err.format( "                      This flag is available on both, the 'inside' and the 'outside'.\n");
 	System.err.format( "                      The setting MUST match the port numbers forwarded by SSH.\n");
 	System.err.format( "                      E.g., if you use an explicit ssh tunnel\n\n");
@@ -358,9 +469,9 @@ class TunnelHandler {
 	System.err.format( "                      but it does with 'dante') then the 'tunnel_port' on either\n");
 	System.err.format( "                      side must be the same.\n\n");
 	System.err.format( "                      NOTE: you may say '-p0' (a zero port number) in which case\n");
-	System.err.format( "                            %s will use STDIO for tunnel traffic. You may set\n", nm);
-	System.err.format( "                            up pipes so that %s on either side communicate via\n", nm);
-	System.err.format( "                            SSH's stdio.\n\n");
+	System.err.format( "                            %s will use STDIO for tunnel traffic. You may want to use\n", nm);
+	System.err.format( "                            the '-- cmd [args]' feature (see below) to set up a tunnel\n");
+	System.err.format( "                            over SSH's stdio.\n\n");
 
     System.err.format( "       -a addr_list   White-space separated list of 'addr[:port]' items. This option\n");
     System.err.format( "                      has the same effect as (and is augmented by) the env-var\n");
@@ -382,17 +493,53 @@ class TunnelHandler {
     System.err.format( "                      problems or general slow-ness.\n\n");
 	}
 
-    System.err.format( "       -h             Print this information.\n\n\n");
+	System.err.format( "       -j             Default prefix string when looking up 'JCA' context properties\n\n");
 
+	System.err.format( "       -J             Prefix string when looking up 'JCA' context properties; e.g.,\n");
+	System.err.format( "                      'gov.aps.jca.jni.JNIContext' or 'com.cosylab.epics.caj.CAJContext'\n\n");
+
+	System.err.format( "       -P filename    File from which properties are to be loaded. This can be a JCA property\n");
+	System.err.format( "                      file so that %s uses the same properties as JCA\n\n",nm);
+
+    System.err.format( "       -h             Print this information.\n\n");
+
+    System.err.format( "       --             STRONGLY RECOMMENDED if <cmd> [<args>] is used. Marks\n");
+    System.err.format( "                      the end for %s's option processing. This prevents any\n", nm);
+    System.err.format( "                      options given to <cmd> being 'eaten' by caxy\n\n");
+
+    System.err.format( "       <cmd> [<args>] If any extra parameters are given to %s (outside mode\n", nm);
+    System.err.format( "                      only) then a new process is spawned, trying to execute <cmd>.\n");
+    System.err.format( "                      All subsequent <args> are passed on to this process.\n");
+    System.err.format( "                      Most importantly, caxy's stdin/stdout streams are connected\n");
+    System.err.format( "                      to the process'es stdout/stdin, respectively. The process'es\n");
+    System.err.format( "                      stderr stream is copied (by a dedicated thread) verbatim to\n");
+    System.err.format( "                      caxy's stderr.\n");
+    System.err.format( "                      This feature is extremely useful to set up a tunnel. <cmd>\n");
+    System.err.format( "                      typically launches an SSH session executing an 'inside' version\n");
+    System.err.format( "                      of caxy on the 'inside'. Here is an example:\n\n");
+    System.err.format( "                        java -jar caxy.jar -- ssh -D 1080 user@insidehost java -jar caxy.jar -I\n\n");
+
+	System.err.println();
 
 	System.err.format( "  ENVIRONMENT:\n\n");
+
+	System.err.format( "       NOTE: Environment variables are ONLY read if the system property 'jca.use_env' is\n");
+	System.err.format( "             set to 'true' or unset and if the JCA property (using one of the JCA\n");
+	System.err.format( "             prefixes, see '-j' and '-J' above) is either not set or set to 'true'\n");
+	System.err.format( "             If 'use_env' is determined to be 'false' then environment variables are ignored\n");
+	System.err.format( "             and JCA properties 'server_port', 'repeater_port' and 'addr_list' are looked up,\n");
+	System.err.format( "             respectively. JCA properties have the prefix as given (in order of precedence) by\n");
+	System.err.format( "             '-J', '-j' or the string 'jca' as a fallback.\n");
+	System.err.format( "             Properties are first looked up in the system properties, then in the file specified\n");
+	System.err.format( "             by the '-P' option (if any). The features provided by '-j', '-J' and '-P' are\n");
+	System.err.format( "             aimed at easing interoperability with JCA.\n\n");
 
     System.err.format( "       EPICS_CA_SERVER_PORT\n");
     System.err.format( "                      UDP port where %s listens for incoming requests on the\n", nm);
     System.err.format( "                      'outside'. In 'inside' mode this defines the port number\n");
     System.err.format( "                      where search requests are sent to if any member of\n");
     System.err.format( "                      the address-list (-a and EPICS_CA_ADDR_LIST) does not\n");
-    System.err.format( "                      explicitly specify a port number. The default value is %d.\n\n", CaxyConst.CA_PORT_BASE);
+    System.err.format( "                      explicitly specify a port number. The default value is %d.\n\n", CaxyConst.CA_SERVER_PORT);
 	System.err.format( "                      NOTE: it is perfectly possible to use different settings\n");
 	System.err.format( "                      for EPICS_CA_SERVER_PORT on the inside and outside.\n\n");
 
