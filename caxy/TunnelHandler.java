@@ -17,70 +17,6 @@ import java.util.Properties;
 
 import gnu.getopt.Getopt;
 
-class CaxyProp extends Properties {
-
-		String jcaCtxtName;
-		String jcaDfltCtxtName;
-
-		public CaxyProp(String fn, String jcaDfltCtxtName, String jcaCtxtName)
-			throws IOException
-		{
-			if ( null != fn ) {
-				load( new FileInputStream( fn ) );
-			}
-			this.jcaCtxtName     = jcaCtxtName;
-			this.jcaDfltCtxtName = jcaDfltCtxtName;
-		}
-
-		public String getJcaProperty(String key, String def)
-		{
-			if ( null != jcaCtxtName ) {
-				key = new String( jcaCtxtName + "." +  key );
-			} else if ( null != jcaDfltCtxtName ) {
-				key = new String( jcaDfltCtxtName + "." + key );
-			} else {
-				key = new String( "jca." + key );
-			}
-			return this.getProperty( key, def );
-		}
-
-		public String getJcaProperty(String key)
-		{
-			return this.getJcaProperty(key, null);
-		}
-
-		public String getProperty(String key, String def)
-		{
-		String rval;
-			if ( null != ( rval = System.getProperty( key ) ) ) {
-				return rval;
-			}
-			if ( null != ( rval = getProperty( key ) ) )
-				return rval;
-			return def;
-		}
-
-		public String getProperty(String key)
-		{
-			return this.getProperty( key, null );
-		}
-
-		int getJcaIntProperty(String key, int def)
-		{
-		String str;
-			if ( (str = getJcaProperty(key)) != null ) {
-				try {
-					return Integer.parseInt(str);
-				} catch ( java.lang.NumberFormatException e ) {
-					System.err.println("Unable to parse "+key+" property");
-					System.exit(1);
-				}
-			}
-			return def;
-		}
-}
-
-
 class TunnelHandler {
 	PktInpChannel     pktStream;
 	WrapHdr           wHdr;
@@ -270,10 +206,9 @@ class TunnelHandler {
 	boolean               inside = false;
 	String              []alist  = new String[0];
 	OutputStream          os     = null;
-	CaxyProp              props  = null;
-	String                propFn = null;
+	CaxyJcaProp           props  = null;
 	String                jcaPre = null;
-	String                jcaDPre= null;
+	boolean               use_env= false;
 
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
@@ -311,16 +246,8 @@ class TunnelHandler {
 					inside = true;
 				break;
 
-				case 'j':
-					jcaDPre = g.getOptarg();
-				break;
-
 				case 'J':
 					jcaPre = g.getOptarg();
-				break;
-
-				case 'P':
-					propFn = g.getOptarg();
 				break;
 
 				default:
@@ -330,13 +257,12 @@ class TunnelHandler {
 		}
 
 		try {
-			props = new CaxyProp( propFn, jcaDPre, jcaPre );
+			props = new CaxyJcaProp( jcaPre );
 		} catch ( Exception e ) {
 			System.err.println("Illegal argument to -P; unable to load properties");
 			System.err.println(e);
 			System.exit(1);
 		} finally {
-			propFn = null;
 			jcaPre = null;
 		}
 
@@ -346,6 +272,7 @@ class TunnelHandler {
               || Boolean.valueOf( props.getJcaProperty( "jca.use_env" ) )
 		   )
 		{
+			use_env     = true;
 			server_port = getIntEnv("EPICS_CA_SERVER_PORT",   CaxyConst.CA_SERVER_PORT);
 			rpeatr_port = getIntEnv("EPICS_CA_REPEATER_PORT", CaxyConst.CA_REPEATER_PORT);
 			if ( inside ) {
@@ -359,6 +286,7 @@ class TunnelHandler {
 			}
 		}
 
+		props = null;
 
 		if ( 0 == tunnel_port ) {
 			if ( g.getOptind() < args.length && ! inside ) {
@@ -421,7 +349,7 @@ class TunnelHandler {
 			alist = null;
 
 			if ( tunlHdlr.udp_dst.length == 0 ) {
-				System.err.println("Must set EPICS_CA_ADDR_LIST or use '-a' in '-I' mode\n");
+				System.err.format("Must set EPICS_CA_ADDR_LIST or use '-a' in '-I' mode (using %s)\n", use_env ? "ENVIRONMENT" : "PROPERTIES");
 				System.exit(1);
 			}
 
@@ -447,7 +375,7 @@ class TunnelHandler {
 	static void usage(String nm)
 	{
 
-	System.err.format( "Usage: %s [-h] [-I -a addr_list] [-d debug_flags] [-p tunnel_port] [-j default prefix] [-J prefix] [-P properties file] [ [--] cmd [ args ] ]\n\n", nm);
+	System.err.format( "Usage: %s [-h] [-I -a addr_list] [-d debug_flags] [-p tunnel_port] [-J prefix] [ [--] cmd [ args ] ]\n\n", nm);
 
 	System.err.format( "  OPTIONS:\n\n");
 
@@ -493,13 +421,11 @@ class TunnelHandler {
     System.err.format( "                      problems or general slow-ness.\n\n");
 	}
 
-	System.err.format( "       -j             Default prefix string when looking up 'JCA' context properties\n\n");
-
 	System.err.format( "       -J             Prefix string when looking up 'JCA' context properties; e.g.,\n");
-	System.err.format( "                      'gov.aps.jca.jni.JNIContext' or 'com.cosylab.epics.caj.CAJContext'\n\n");
-
-	System.err.format( "       -P filename    File from which properties are to be loaded. This can be a JCA property\n");
-	System.err.format( "                      file so that %s uses the same properties as JCA\n\n",nm);
+	System.err.format( "                      'gov.aps.jca.jni.JNIContext' or 'com.cosylab.epics.caj.CAJContext'.\n");
+	System.err.format( "                      If no prefix is set or a resource with the give prefix is not found\n");
+	System.err.format( "                      then a an attempt using the 'default' prefix 'gov.aps.jca.Context'\n");
+	System.err.format( "                      is made.\n\n");
 
     System.err.format( "       -h             Print this information.\n\n");
 
@@ -525,13 +451,20 @@ class TunnelHandler {
 
 	System.err.format( "       NOTE: Environment variables are ONLY read if the system property 'jca.use_env' is\n");
 	System.err.format( "             set to 'true' or unset and if the JCA property (using one of the JCA\n");
-	System.err.format( "             prefixes, see '-j' and '-J' above) is either not set or set to 'true'\n");
+	System.err.format( "             prefixes, see '-J' above) is either not set or set to 'true'\n");
 	System.err.format( "             If 'use_env' is determined to be 'false' then environment variables are ignored\n");
 	System.err.format( "             and JCA properties 'server_port', 'repeater_port' and 'addr_list' are looked up,\n");
 	System.err.format( "             respectively. JCA properties have the prefix as given (in order of precedence) by\n");
-	System.err.format( "             '-J', '-j' or the string 'jca' as a fallback.\n");
-	System.err.format( "             Properties are first looked up in the system properties, then in the file specified\n");
-	System.err.format( "             by the '-P' option (if any). The features provided by '-j', '-J' and '-P' are\n");
+	System.err.format( "             '-J <prefix>', or the string 'gov.aps.jca.Context' as a fallback.\n");
+	System.err.format( "             Properties are first looked up in the user properties (path itself defined by\n");
+	System.err.format( "             JCA property 'gov.aps.jca.JCALibrary.properties' or if such a property is not\n");
+	System.err.format( "             found then '.JCALibrary/JCALibrary.properties' in the user's home directory\n");
+	System.err.format( "             is used). If no user-specific property is found then the system-wide ones\n");
+	System.err.format( "             (located in 'lib/JCALibrary.properties' in the java home directory) are consulted\n");
+	System.err.format( "             and finally, a set of built-in resources 'JCALibrary.properties'.\n");
+	System.err.format( "             This scheme essentially follows what JCA is doing.\n\n");
+
+	System.err.format( "             The features provided by '-J' as well as system and JCA properties are\n");
 	System.err.format( "             aimed at easing interoperability with JCA.\n\n");
 
     System.err.format( "       EPICS_CA_SERVER_PORT\n");
