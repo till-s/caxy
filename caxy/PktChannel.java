@@ -22,6 +22,7 @@ class PktOutChannel {
 		int put, wanted;
 		protected IncompleteBufferWrittenException(int put_in, int wanted_in)
 		{
+			super( "Buffer not completely written (only " + put_in + " out of " + wanted_in + " bytes)" );
 			put = put_in; wanted = wanted_in;
 		}
 	}
@@ -151,18 +152,10 @@ class PktInpChannel {
 		int got, wanted;
 		protected IncompleteBufferReadException(int got_in, int wanted_in)
 		{
+			super( "Buffer not completely read (only " + got_in + " out of " + wanted_in + " bytes)" );
 			got = got_in; wanted = wanted_in;
 		}
 	}
-
-	class IncompleteBufferWrittenException extends Exception {
-		int put, wanted;
-		protected IncompleteBufferWrittenException(int put_in, int wanted_in)
-		{
-			put = put_in; wanted = wanted_in;
-		}
-	}
-
 
 	public PktInpChannel(ReadableByteChannel chnl_in)
 	{
