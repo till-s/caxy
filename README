@@ -338,19 +338,37 @@ caxy supports the following options/switches:
              connection and the need for an open TCP port on the
              'inside' machine which may collide with other users.
 
-***FIXME
              The only disadvantage is that it is not trivial to 
              nail two pipes together which connect caxy to the
              ssh client. This is especially true under windows.
 
-             The easiest method uses a named pipe, e.g., 'mypipe':
+             Luckily, caxy now helps you with this task: see '--'
 
-             caxy < mypipe -p0 | ssh -C -D 1080 user@inside  caxy -I -p0  > mypipe
+ -- <args>   Any extra arguments given to caxy are interpreted
+             as a secondary or child command and its arguments with
+             which caxy communicates over the stdin and stdout
+             streams and which it expects to connect it to its
+             'inside' peer.
 
-             The 'catun.pl' and 'catun.sh' scripts illustrate
-             alternative methods avoiding named pipes.
-***FIXME
+             It is strongly recommended to separate such a command
+             with the option terminator: '--' so that any options
+             given to the child command are not parsed by caxy
+             itself but passed on to the child process.
 
+             Typically you would launch an 'ssh' session to the
+             'inside' machine where you would execute an 'inside'
+             version of caxy:
+
+              java -jar caxy.jar -p0 -- ssh -D 1080 user@inside java -jar caxy.jar -I -p0
+
+             would bring up a complete tunnel. Note that the stderr
+             stream of the child process is copied (by a dedicated
+             thread) to stderr of the JVM on the 'outside' machine
+             so that you can see any potential error messages.
+
+             A child process is only created by caxy running in
+             'outside' mode (it uses java's System.exec() method).
+             
 EPICS_CA_SERVER_PORT: Port where to listen for UDP messages ('outside'
              mode). In 'inside' mode, the value of this variable
              defines the default port where UDP messages are sent
