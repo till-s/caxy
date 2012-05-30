@@ -4,6 +4,14 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.IOException;
 
+/* Trivial class extending 'Thread' to copy
+ * characters from an InputStream to an
+ * OutputStream
+ *
+ * Typically used to copy stderr of a spawned
+ * process (Runtime.exec()) to the VM stderr.
+ */
+
 class Errlog extends Thread {
 
 	protected InputStream  is;
@@ -12,17 +20,6 @@ class Errlog extends Thread {
 	public Errlog(InputStream is)
 	{
 		this(is, System.err);
-	}
-
-	public void start( Class c )
-	{
-		/* start thread only if this constructor is not called
-		 * from a subclass (so that a subclass could do more
-		 * initialization before calling start)
-		 */
-		if ( this.getClass().equals( c ) ) {
-			super.start();
-		}
 	}
 
 	public Errlog(InputStream is, OutputStream os)
@@ -47,6 +44,18 @@ class Errlog extends Thread {
 		}
 	}
 
+	public void start( Class c )
+	{
+		/* start thread only if this constructor is not called
+		 * from a subclass (so that a subclass could do more
+		 * initialization before calling start)
+		 */
+		if ( this.getClass().equals( c ) ) {
+			super.start();
+		}
+	}
+
+	/* Test code */
 	public static void main(String []args)
 		throws IOException
 	{
