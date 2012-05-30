@@ -27,6 +27,8 @@ class TunnelHandler {
 
 	static final int  TCP_BUFSZ = 10000;
 
+	public static final String name = "caxyj";
+
 	public static final int TUNNEL_PORT_DFLT = 0;
 
 	class INSAEntry {
@@ -201,7 +203,7 @@ class TunnelHandler {
 	int                   rpeatr_port;
 	int                   debug  = 0;
 	WrapHdr               wHdr   = new WrapHdr();
-	Getopt                g      = new Getopt("caxyj", args, "a:d:hIJ:p:P:");
+	Getopt                g      = new Getopt(name, args, "a:d:hIJ:p:P:v");
 	int                   opt;
 	boolean               inside = false;
 	String              []alist  = new String[0];
@@ -227,7 +229,7 @@ class TunnelHandler {
 				break;
 
 				case 'h':
-					usage("caxy");
+					usage(name);
 					System.exit(0);
 				break;
 
@@ -248,6 +250,11 @@ class TunnelHandler {
 
 				case 'J':
 					jcaPre = g.getOptarg();
+				break;
+
+				case 'v':
+					System.err.println(name+" release: " + CaxyVers.VERSION_STR);
+					System.exit(0);
 				break;
 
 				default:
@@ -428,6 +435,8 @@ class TunnelHandler {
 	System.err.format( "                      is made.\n\n");
 
     System.err.format( "       -h             Print this information.\n\n");
+
+    System.err.format( "       -v             Print release information\n\n");
 
     System.err.format( "       --             STRONGLY RECOMMENDED if <cmd> [<args>] is used. Marks\n");
     System.err.format( "                      the end for %s's option processing. This prevents any\n", nm);
