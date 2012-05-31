@@ -1,11 +1,12 @@
 <project name="caxy" default="dist" basedir=".">
-	<property name="src" relative="true" location="caxy"/>
-	<property name="bld" relative="true" location="build"/>
-	<property name="dst" relative="true" location="dist"/>
-	<property name="sdt" relative="true" location="srcdist"/>
+	<property name="src" value="caxy"/>
+	<property name="bld" value="build"/>
+	<property name="dst" value="dist"/>
+	<property name="sdt" value="srcdist"/>
+	<property name="gnu" value="gnu/getopt"/>
 
 	<path id="classpath">
-		<pathelement location="."/>
+		<pathelement location="${bld}"/>
 	</path>
 
 	<target name="init">
@@ -13,10 +14,20 @@
 		<mkdir dir="${bld}"/>
 	</target>
 
-	<target name="compile" depends="init,mkvers" description="compile">
+	<target name="gnucomp" depends="init" description="compile gnu getopt">
+		<javac includeantruntime="false"
+		       srcdir="${gnu}" destdir="${bld}"
+		       excludes="**/GetoptDemo.java"
+		       debug="true"    debuglevel="lines,source"
+		/>
+	</target>
+
+	<target name="compile" depends="init,mkvers,gnucomp" description="compile">
 		<property name="blax" refid="classpath"/>
 		<echo   message="My classpath ${blax}"/>
-		<javac includeantruntime="false" srcdir="${src}" destdir="${bld}" debug="true" debuglevel="lines,source">
+		<javac includeantruntime="false"
+		       srcdir="${src}" destdir="${bld}"
+		       debug="true" debuglevel="lines,source">
 		<classpath refid="classpath"/> 
 		</javac>
 	</target>
