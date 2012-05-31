@@ -23,10 +23,22 @@
 	</target>
 
 	<target name="compile" depends="init,mkvers,gnucomp" description="compile">
+		<!-- AutoAddr.java requires java 1.6. However, the presence of this
+		     class is detected at run-time so we just don't compile it under
+		     an older jdk
+		-->
+		<condition property="java.preV6.exclude" value="**/AutoAddr.java" else="">
+			<!-- no way to do numerical comparison in ant :-( but since caxy
+			     won't compile with anything older than 1.5 we may as well just
+		         check for that
+		    -->
+			<equals arg1="${ant.java.version}" arg2="1.5" trim="true"/>
+		</condition>
 		<property name="blax" refid="classpath"/>
 		<echo   message="My classpath ${blax}"/>
 		<javac includeantruntime="false"
 		       srcdir="${src}" destdir="${bld}"
+		       excludes="${java.preV6.exclude}"
 		       debug="true" debuglevel="lines,source">
 		<classpath refid="classpath"/> 
 		</javac>
