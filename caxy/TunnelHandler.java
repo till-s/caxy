@@ -103,7 +103,7 @@ class TunnelHandler {
 		if ( st.countTokens() > 0 ) {
 			String host = st.nextToken();
 			if ( st.hasMoreTokens() ) {
-				port = Integer.parseInt( st.nextToken() );
+				port = Integer.decode( st.nextToken() ).intValue();
 			}
 			sa = new InetSocketAddress(host, port);
 			if ( sa.isUnresolved() ) {
@@ -129,7 +129,7 @@ class TunnelHandler {
 	String str;
 		if ( (str = System.getenv(env_var)) != null ) {
 			try {
-				return Integer.parseInt(str);
+				return Integer.decode(str).intValue();
 			} catch ( java.lang.NumberFormatException e ) {
 				System.err.println("Unable to parse "+env_var+" env-var");
 				System.exit(1);
@@ -222,7 +222,7 @@ class TunnelHandler {
 	
 				case 'd':
 					try {
-						debug = Integer.parseInt(g.getOptarg());
+						debug = Integer.decode(g.getOptarg()).intValue();
 					} catch ( java.lang.NumberFormatException e ) {
 						System.err.println("Illegal argument to -d; must be numerical");
 						System.exit(1);
@@ -236,7 +236,7 @@ class TunnelHandler {
 
 				case 'p':
 					try {
-						tunnel_port = Integer.parseInt(g.getOptarg());
+						tunnel_port = Integer.decode(g.getOptarg()).intValue();
 						if ( tunnel_port < 0 || tunnel_port > 65535 )
 							throw new java.lang.NumberFormatException();
 					} catch ( java.lang.NumberFormatException e ) {
