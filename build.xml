@@ -40,7 +40,7 @@
 
 	<target name="srcdist" depends="dist" description="jar everything">
 		<mkdir dir="${sdt}"/>
-		<jar jarfile="${sdt}/caxy.jar">
+		<jar jarfile="${sdt}/caxy-src.jar">
 			<fileset dir="." includes="${src}/**" excludes="**/.*.swp"/>
 			<fileset dir="." includes="${bld}/**"/>
 			<fileset dir="." includes="gnu/**,README*,JCALibrary.properties,build.xml"/>
