@@ -210,7 +210,8 @@ class TunnelHandler {
 	OutputStream          os     = null;
 	CaxyJcaProp           props  = null;
 	String                jcaPre = null;
-	boolean               use_env= false;
+	String                str;
+	boolean               use_env;
 
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
@@ -264,7 +265,7 @@ class TunnelHandler {
 		}
 
 		try {
-			props = new CaxyJcaProp( jcaPre );
+			props = new CaxyJcaProp( jcaPre, (CaxyConst.DEBUG_PROPS & debug) != 0 );
 		} catch ( Exception e ) {
 			System.err.println("Illegal argument to -P; unable to load properties");
 			System.err.println(e);
@@ -273,13 +274,16 @@ class TunnelHandler {
 			jcaPre = null;
 		}
 
-		if (     null == props.getProperty( "jca.use_env" )
-		      && null == props.getJcaProperty( "jca.use_env" )
-              || Boolean.valueOf( props.getProperty( "jca.use_env" ) )
-              || Boolean.valueOf( props.getJcaProperty( "jca.use_env" ) )
-		   )
-		{
-			use_env     = true;
+		str = props.getProperty( "jca.use_env" );
+		if ( null == str ) {
+			str = props.getJcaProperty( "jca.use_env", "true" );
+		}
+		use_env = Boolean.valueOf( str );
+
+		if ( (CaxyConst.DEBUG_PROPS & debug) != 0 )
+			System.err.println("Using configuration values from " + (use_env ? "ENVIRONMENT" : "PROPERTIES"));
+
+		if ( use_env ) {
 			server_port = getIntEnv("EPICS_CA_SERVER_PORT",   CaxyConst.CA_SERVER_PORT);
 			rpeatr_port = getIntEnv("EPICS_CA_REPEATER_PORT", CaxyConst.CA_REPEATER_PORT);
 			if ( inside ) {
@@ -334,6 +338,12 @@ class TunnelHandler {
 					tunlHdlr.addDstAddresses(alist[i], server_port);
 				}
 
+				if ( tunlHdlr.udp_dst.length == 0 ) {
+					System.err.format("Must set EPICS_CA_ADDR_LIST or use '-a' in '-I' mode (using %s)\n",
+					                  use_env ? "ENVIRONMENT" : "PROPERTIES");
+					System.exit(1);
+				}
+
 				/* read an initial packet which tells us what repeater port the 'outside' is using */
 				wHdr.read( inpStrm );
 				
@@ -354,11 +364,6 @@ class TunnelHandler {
 
 			wHdr  = null;
 			alist = null;
-
-			if ( tunlHdlr.udp_dst.length == 0 ) {
-				System.err.format("Must set EPICS_CA_ADDR_LIST or use '-a' in '-I' mode (using %s)\n", use_env ? "ENVIRONMENT" : "PROPERTIES");
-				System.exit(1);
-			}
 
 			while ( true ) {
 				tunlHdlr.handleStream(inside, debug);
@@ -417,9 +422,13 @@ class TunnelHandler {
 
     System.err.format( "       -d debug_flags Enable debug messages (on stderr). 'debug_flags' is a bitset\n");
     System.err.format( "                      of switches:\n");
-    System.err.format( "                         1: dump incoming UDP frames\n");
-    System.err.format( "                         2: dump incoming TCP frames\n\n");
-    System.err.format( "                         8: omit CA beacon messages\n\n");
+    System.err.format( "                              0x%1x: dump incoming UDP frames\n",           CaxyConst.DEBUG_UDP);
+    System.err.format( "                              0x%1x: dump incoming TCP frames\n",           CaxyConst.DEBUG_TCP);
+    System.err.format( "                              0x%1x: omit CA beacon messages\n",            CaxyConst.DEBUG_NOB);
+    System.err.format( "                          0x%05x: trace how properties are looked up\n", CaxyConst.DEBUG_PROPS);
+
+	System.err.println();
+
 	if ( false ) {
 	/* not supported (yet) */
     System.err.format( "       -n             Do not do any DNS lookup when dumping IP addresses.\n");
