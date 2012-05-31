@@ -114,7 +114,7 @@ class TunnelHandler {
 				InetSocketAddress [] oa = udp_dst;
 				udp_dst = new InetSocketAddress[udp_dst.length+1];
 				/* Avoid Arrays.copyOf - not in java 1.4 */
-				for ( i=0; i<udp_dst.length; i++ ) {
+				for ( i=0; i<oa.length; i++ ) {
 					udp_dst[i] = oa[i];
 				}
 				udp_dst[i] = sa;
