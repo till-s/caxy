@@ -24,4 +24,5 @@ public interface CaxyConst {
 	// Debug flags >= 1<<16 are reserved for class-specific debugging
 	public static final int  DEBUG_RAWBUF       = (1<<16); /* WrapHdr     */
 	public static final int  DEBUG_PROPS        = (1<<17); /* CaxyJcaProp */
+	public static final int  DEBUG_ALIST        = (1<<18); /* CaxyJcaProp */
 }
