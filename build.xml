@@ -97,4 +97,8 @@
 		/>
 	</target>
 
+	<target name="jvers">
+		<echo message="JDK Version ${ant.java.version}"/>
+	</target>
+
 </project>
