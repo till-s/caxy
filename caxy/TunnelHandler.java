@@ -466,6 +466,10 @@ class TunnelHandler {
 					System.exit(1);
 				}
 
+				if ( 0 != (debug & CaxyConst.DEBUG_ALIST) ) {
+					tunlHdlr.dumpDstAddresses();
+				}
+
 				/* read an initial packet which tells us what repeater port the 'outside' is using */
 				wHdr.read( inpStrm );
 				
@@ -482,10 +486,6 @@ class TunnelHandler {
 				outStrm.putPkt( wHdr, null );
 	
 				ClntProxy.get( CaxyConst.INADDR_ANY, 0, server_port );
-			}
-
-			if ( 0 != (debug & CaxyConst.DEBUG_ALIST) ) {
-				tunlHdlr.dumpDstAddresses();
 			}
 
 			wHdr  = null;
