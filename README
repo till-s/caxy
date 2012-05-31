@@ -383,6 +383,15 @@ EPICS_CA_ADDR_LIST: In 'inside' mode: list of addresses where UDP messages
              in 'outside' mode. The addresses in this list are 
              appended to any '-a' options given on the command line.
 
+EPICS_CA_AUTO_ADDR_LIST: In 'inside' mode: unless this is set to 'NO'
+             a list of all broadcast addresses of the host's network
+             interfaces is assembled and appended to the list built
+			 with -a options and EPICS_CA_ADDR_LIST.
+			 This feature is not available under java < 1.6.
+             The feature can also be forced on or off by means of the
+             -A true / -A false command line option which takes
+             precedence if present.
+
 NOTE: The server and repeater port definitions may differ on 
       the inside and outside. The tunnel handles this
       transparently (but the settings must of course be correct,
@@ -396,10 +405,6 @@ NOTE: The server and repeater port definitions may differ on
       sets the relevant environment variables). On the 'outside'
       caxy and the CA-clients do not have to replicate the non-standard
       setting but may just use the default ones.
-
-      The EPICS_CA_ADDR_LIST or '-a' option *must* be set on
-      the 'inside'. There is no logic to auto-detect broadcast
-      addresses etc.
 
 Examples:
 
