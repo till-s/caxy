@@ -1,7 +1,10 @@
 package caxy;
 
+import java.lang.reflect.Method;
+import java.lang.ClassNotFoundException;
 import java.nio.ByteBuffer;
 import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.nio.channels.SocketChannel;
 import java.nio.channels.ByteChannel;
 import java.nio.channels.Channels;
@@ -96,7 +99,65 @@ class TunnelHandler {
 		insaCache = new INSACache();
 	}
 
-	public synchronized void addDstAddress(String s, int port)
+	/* extend array by 'n' slots; not synchronized because caller is */
+	protected int arrext(int n)
+	{
+	int i;
+	InetSocketAddress [] oa = udp_dst;
+	int rval                = udp_dst.length;
+
+		udp_dst = new InetSocketAddress[rval + n];
+		/* Avoid Arrays.copyOf - not in java 1.4 */
+		for ( i=0; i<oa.length; i++ ) {
+			udp_dst[i] = oa[i];
+		}
+		return rval;
+	}
+
+	/* Not efficient but only done once, during initialization */
+	protected boolean present(InetSocketAddress sa)
+	{
+	int i;
+		for ( i=0; i<udp_dst.length; i++ ) {
+			if ( udp_dst[i].equals( sa ) )
+				return true;
+		}
+		return false;
+	}
+
+	public synchronized void addDstAddress(InetSocketAddress sa)
+	{
+		/* Only add if not there already */
+		if ( ! present( sa ) ) {
+		int idx = arrext(1);
+			udp_dst[idx] = sa;
+		}
+	}
+
+	public synchronized void addDstAddresses(InetAddress []sa, int port)
+	{
+	int l   = sa.length;
+	int idx;
+	int i,nl;
+	InetSocketAddress []buf = new InetSocketAddress[l];
+
+		for ( i=0, nl=l; i<l; i++ ) {
+			if ( (present( buf[i] = new InetSocketAddress( sa[i], port ) )) ) {
+				buf[i] = null;
+				nl--;
+			}
+		}
+
+		idx = arrext(nl);
+
+		for ( i = 0, nl=0; i < l; i++ ) {
+			if ( null != buf[i] ) {
+				udp_dst[idx + nl++] = buf[i];
+			}
+		}
+	}
+
+	public void addDstAddress(String s, int port)
 		throws java.lang.NumberFormatException
 	{
 	StringTokenizer   st = new StringTokenizer(s,":");
@@ -110,14 +171,7 @@ class TunnelHandler {
 			if ( sa.isUnresolved() ) {
 				System.err.println("Ignoring unresolved address: "+host+":"+port);
 			} else {
-				int i;
-				InetSocketAddress [] oa = udp_dst;
-				udp_dst = new InetSocketAddress[udp_dst.length+1];
-				/* Avoid Arrays.copyOf - not in java 1.4 */
-				for ( i=0; i<oa.length; i++ ) {
-					udp_dst[i] = oa[i];
-				}
-				udp_dst[i] = sa;
+				addDstAddress( sa );
 			}
 		}
 	}
@@ -128,6 +182,15 @@ class TunnelHandler {
 	StringTokenizer st = new StringTokenizer(addresses);
 		while ( st.hasMoreTokens() ) {
 			addDstAddress( st.nextToken(), defaultPort );
+		}
+	}
+
+	public synchronized void dumpDstAddresses()
+	{
+	int i;
+		System.err.println("CA Address list:");
+		for ( i=0; i<udp_dst.length; i++ ) {
+			System.err.println("  "+udp_dst[i]);
 		}
 	}
 
@@ -182,19 +245,23 @@ class TunnelHandler {
 		}
 		buf.flip();
 
-		if ( ! inside ) {
-			udp_dst[0] = insaCache.get( wHdr.get_caddr(), wHdr.get_cport());
+		if ( ! inside ) { /* protect 'udp_dst' array */
+			synchronized ( this ) {
+				udp_dst[0] = insaCache.get( wHdr.get_caddr(), wHdr.get_cport());
+			}
 			clnt       = ClntProxy.get( CaxyConst.INADDR_ANY, 0, 0 );
 		} else {
 			clnt       = ClntProxy.get( wHdr.get_caddr(), wHdr.get_cport(), 0 );
 		}
 
-		for ( i = 0; i < udp_dst.length; i++ ) {
-			/* if whdr has not been dumped yet then there were only beacons */
-			if ( (debug & CaxyConst.DEBUG_TCP) != 0 && ! need_whdr_dump ) {
-				System.err.println("Sending UDP to: " + udp_dst[i]);
+		synchronized (this ) { /* protect 'udp_dst' array */
+			for ( i = 0; i < udp_dst.length; i++ ) {
+				/* if whdr has not been dumped yet then there were only beacons */
+				if ( (debug & CaxyConst.DEBUG_TCP) != 0 && ! need_whdr_dump ) {
+					System.err.println("Sending UDP to: " + udp_dst[i]);
+				}
+				clnt.putBuf(buf, udp_dst[i]);
 			}
-			clnt.putBuf(buf, udp_dst[i]);
 		}
 	}
 
@@ -210,7 +277,7 @@ class TunnelHandler {
 	int                   rpeatr_port;
 	int                   debug  = 0;
 	WrapHdr               wHdr   = new WrapHdr();
-	Getopt                g      = new Getopt(name, args, "a:d:hIJ:p:P:v");
+	Getopt                g      = new Getopt(name, args, "a:A:d:hIJ:p:P:v");
 	int                   opt;
 	boolean               inside = false;
 	LinkedList<String>    alist  = new LinkedList<String>();
@@ -218,17 +285,22 @@ class TunnelHandler {
 	CaxyJcaProp           props  = null;
 	String                jcaPre = null;
 	String                str;
-	boolean               use_env;
+	boolean               use_env, auto_alist = true, auto_alist_set = false;
 
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
 				case 'a':
 					alist.add( g.getOptarg() );
 				break;
+
+				case 'A':
+					auto_alist     = Boolean.valueOf( g.getOptarg() );
+					auto_alist_set = true;
+				break;
 	
 				case 'd':
 					try {
-						debug = Integer.decode(g.getOptarg()).intValue();
+						debug = Integer.decode( g.getOptarg() ).intValue();
 					} catch ( java.lang.NumberFormatException e ) {
 						System.err.println("Illegal argument to -d; must be numerical");
 						System.exit(1);
@@ -294,12 +366,21 @@ class TunnelHandler {
 			rpeatr_port = getIntEnv("EPICS_CA_REPEATER_PORT", CaxyConst.CA_REPEATER_PORT);
 			if ( inside ) {
 				env_addrlst = System.getenv("EPICS_CA_ADDR_LIST");
+				if ( ! auto_alist_set ) { /* not enforced by commandline option */
+					str = System.getenv("EPICS_CA_AUTO_ADDR_LIST");
+					auto_alist = null == str || ! str.equalsIgnoreCase("NO");
+					auto_alist_set = true;
+				}
 			}
 		} else {
 			server_port = props.getJcaIntProperty( "server_port",   CaxyConst.CA_SERVER_PORT );
 			rpeatr_port = props.getJcaIntProperty( "repeater_port", CaxyConst.CA_REPEATER_PORT );
 			if ( inside ) {
 				env_addrlst = props.getJcaProperty( "addr_list" );
+				if ( ! auto_alist_set ) { /* not enforced by commandline option */
+					auto_alist = props.getJcaBoolProperty( "auto_addr_list", true );
+					auto_alist_set = true;
+				}
 			}
 		}
 
@@ -350,6 +431,24 @@ class TunnelHandler {
 				for ( i = alist.listIterator(); i.hasNext(); ) {
 					tunlHdlr.addDstAddresses( (String)i.next(), server_port );
 				}
+
+				if ( auto_alist ) {
+					try {
+						Class<?> autoAddrCls  = Class.forName("caxy.AutoAddr");
+						Method   getBcstAddrs = autoAddrCls.getMethod("getList", new Class[] { Boolean.TYPE });
+						tunlHdlr.addDstAddresses( 
+								(InetAddress[])getBcstAddrs.invoke( null, new Object[] {  0 != (debug & CaxyConst.DEBUG_ALIST) } ),
+								server_port );
+
+					} catch (ClassNotFoundException e) {
+						System.err.println("Unable to assemble CA auto address list: not supported under Java < 1.6 !");
+					} catch (Throwable e) {
+						System.err.println("Unable to assemble CA auto address list: ");
+						System.err.println( e );
+						e.printStackTrace();
+						System.exit(1);
+					}
+				}
 				
 				if ( tunlHdlr.udp_dst.length == 0 ) {
 					System.err.format("Error: NO CA ADDRESS LIST in -I mode\n\n");
@@ -383,6 +482,10 @@ class TunnelHandler {
 				outStrm.putPkt( wHdr, null );
 	
 				ClntProxy.get( CaxyConst.INADDR_ANY, 0, server_port );
+			}
+
+			if ( 0 != (debug & CaxyConst.DEBUG_ALIST) ) {
+				tunlHdlr.dumpDstAddresses();
 			}
 
 			wHdr  = null;
@@ -443,12 +546,17 @@ class TunnelHandler {
     System.err.format( "                      on the combined list on the 'inside' network.\n");
     System.err.format( "                      Multiple -a options may be given.\n\n");
 
+    System.err.format( "       -A <boolval>   Enforce auto_addr_list; the value may be 'true' or 'false' (anything\n");
+    System.err.format( "                      but 'true' is 'false'. This overrides value retrieved from environment\n");
+    System.err.format( "                      ('EPICS_CA_AUTO_ADDR_LIST') or properties ('auto_addr_list').\n\n");
+
     System.err.format( "       -d debug_flags Enable debug messages (on stderr). 'debug_flags' is a bitset\n");
     System.err.format( "                      of switches:\n");
     System.err.format( "                              0x%x: dump incoming UDP frames\n",       CaxyConst.DEBUG_UDP);
     System.err.format( "                              0x%x: dump incoming TCP frames\n",       CaxyConst.DEBUG_TCP);
     System.err.format( "                              0x%x: omit CA beacon messages\n",        CaxyConst.DEBUG_NOB);
     System.err.format( "                          0x%x: trace how properties are looked up\n", CaxyConst.DEBUG_PROPS);
+    System.err.format( "                          0x%x: trace how CA addr list is assembled\n",CaxyConst.DEBUG_ALIST);
 
 	System.err.println();
 
@@ -494,8 +602,9 @@ class TunnelHandler {
 	System.err.format( "             set to 'true' or unset and if the JCA property (using one of the JCA\n");
 	System.err.format( "             prefixes, see '-J' above) is either not set or set to 'true'\n");
 	System.err.format( "             If 'use_env' is determined to be 'false' then environment variables are ignored\n");
-	System.err.format( "             and JCA properties 'server_port', 'repeater_port' and 'addr_list' are looked up,\n");
-	System.err.format( "             respectively. JCA properties have the prefix as given (in order of precedence) by\n");
+	System.err.format( "             and JCA properties 'server_port', 'repeater_port', 'addr_list' and 'auto_addr_list'\n");
+	System.err.format( "             are looked up, respectively.\n");
+	System.err.format( "             JCA properties have the prefix as given (in order of precedence) by\n");
 	System.err.format( "             '-J <prefix>', or the string 'gov.aps.jca.Context' as a fallback.\n");
 	System.err.format( "             Properties are first looked up in the user properties (path itself defined by\n");
 	System.err.format( "             JCA property 'gov.aps.jca.JCALibrary.properties' or if such a property is not\n");
@@ -532,6 +641,11 @@ class TunnelHandler {
     System.err.format( "                      for more details. Note that <address> may be a DNS name or plain\n");
     System.err.format( "                      IP address. If no port number is given then the ('inside') value\n");
     System.err.format( "                      of EPICS_CA_SERVER_PORT is used. The contents of this variable\n");
-    System.err.format( "                      are appended to all '-a' options.\n");
+    System.err.format( "                      are appended to all '-a' options.\n\n");
+
+    System.err.format( "       EPICS_CA_AUTO_ADDR_LIST\n");
+    System.err.format( "                      If unset or set to anything but 'NO' then a list of all broadcast\n");
+    System.err.format( "                      addresses of all interfaces of the host is computed and appended\n");
+    System.err.format( "                      to any addresses present in EPICS_CA_ADDR_LIST and '-a' options.\n\n");
 	}
 }
