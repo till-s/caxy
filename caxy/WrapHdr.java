@@ -15,8 +15,6 @@ class WrapHdr {
 	protected static final int WRAP_SPORT_OFF = 12;
 	protected static final int WRAP_CPORT_OFF = 14;
 
-	public    static final int DEBUG_RAWBUF   = CaxyConst.DEBUG_SPEC << 1;
-
 	public int get_n_ca()  { b.position(WRAP_N_CA_OFF);  return (b.getShort()) & 0xffff; }
 	public int get_saddr() { b.position(WRAP_SADDR_OFF); return b.getInt(); }
 	public int get_caddr() { b.position(WRAP_CADDR_OFF); return b.getInt(); }
@@ -74,7 +72,7 @@ class WrapHdr {
 		System.err.format( "Srv Prt: %d\n", (b.getShort()&0xffff));
 		System.err.format( "Clt Prt: %d\n", (b.getShort()&0xffff));
 
-		if ( (debug & DEBUG_RAWBUF) != 0 ) {
+		if ( (debug & CaxyConst.DEBUG_RAWBUF) != 0 ) {
 			byte v;
 
 			b.rewind();
