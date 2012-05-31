@@ -339,8 +339,18 @@ class TunnelHandler {
 				}
 
 				if ( tunlHdlr.udp_dst.length == 0 ) {
-					System.err.format("Must set EPICS_CA_ADDR_LIST or use '-a' in '-I' mode (using %s)\n",
+					System.err.format("Error: NO CA ADDRESS LIST in -I mode\n\n");
+					System.err.format("Must set %s or use '-a' (using %s)\n\n",
+					                  use_env ? "'EPICS_CA_ADDR_LIST' env-var" : "'gov.aps.jca.Context.addr_list' property",
 					                  use_env ? "ENVIRONMENT" : "PROPERTIES");
+
+					System.err.println("To use environment variables, make sure 'jca.use_env' property");
+					System.err.println("is either true or undefined.");
+					System.err.println();
+					System.err.println("To use properties, the 'jca.use_env' property must be set to 'false'.");
+					System.err.println();
+
+					System.err.format("Use -d 0x%x to track property-related problems\n", CaxyConst.DEBUG_PROPS);
 					System.exit(1);
 				}
 
@@ -422,10 +432,10 @@ class TunnelHandler {
 
     System.err.format( "       -d debug_flags Enable debug messages (on stderr). 'debug_flags' is a bitset\n");
     System.err.format( "                      of switches:\n");
-    System.err.format( "                              0x%1x: dump incoming UDP frames\n",           CaxyConst.DEBUG_UDP);
-    System.err.format( "                              0x%1x: dump incoming TCP frames\n",           CaxyConst.DEBUG_TCP);
-    System.err.format( "                              0x%1x: omit CA beacon messages\n",            CaxyConst.DEBUG_NOB);
-    System.err.format( "                          0x%05x: trace how properties are looked up\n", CaxyConst.DEBUG_PROPS);
+    System.err.format( "                              0x%x: dump incoming UDP frames\n",       CaxyConst.DEBUG_UDP);
+    System.err.format( "                              0x%x: dump incoming TCP frames\n",       CaxyConst.DEBUG_TCP);
+    System.err.format( "                              0x%x: omit CA beacon messages\n",        CaxyConst.DEBUG_NOB);
+    System.err.format( "                          0x%x: trace how properties are looked up\n", CaxyConst.DEBUG_PROPS);
 
 	System.err.println();
 
