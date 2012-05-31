@@ -27,13 +27,18 @@
 		     class is detected at run-time so we just don't compile it under
 		     an older jdk
 		-->
-		<condition property="java.preV6.exclude" value="**/AutoAddr.java" else="">
+		<condition property="java.preV6.exclude" value="AutoAddr.java" else="">
 			<!-- no way to do numerical comparison in ant :-( but since caxy
 			     won't compile with anything older than 1.5 we may as well just
 		         check for that
 		    -->
+			<or>
 			<equals arg1="${ant.java.version}" arg2="1.5" trim="true"/>
+			<equals arg1="${ant.java.version}" arg2="1.4" trim="true"/>
+			<equals arg1="${ant.java.version}" arg2="1.3" trim="true"/>
+			</or>
 		</condition>
+		<echo message="${java.preV6.exclude}"/>
 		<property name="blax" refid="classpath"/>
 		<echo   message="My classpath ${blax}"/>
 		<javac includeantruntime="false"
