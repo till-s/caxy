@@ -17,63 +17,76 @@ class CaxyJcaProp {
 
 		protected String jcaCtxtName;
 
-		protected static String jcaDfltCtxtName = "gov.aps.jca.Context";
+		protected static final String jcaDfltCtxtName = "gov.aps.jca.Context";
 
-		protected Properties _jcaProp;
-		protected Properties _sysProp;
-		protected Properties _usrProp;
+		protected static final int    USR_PROP = 0;
+		protected static final int    SYS_PROP = 1;
+		protected static final int    JCA_PROP = 2;
 
-		public CaxyJcaProp(String jcaCtxtName)
+		protected Properties          props[] = { new Properties(), new Properties(), new Properties() };
+		protected String              propn[] = { "builtin",        null,             null             };
+
+		protected boolean             debug;
+
+		public CaxyJcaProp(String jcaCtxtName, boolean debug)
 			throws IOException
 		{
 		InputStream is;
 		String pathSep = System.getProperty( "file.separator" );
-		String path    = null;
 
 			this.jcaCtxtName = jcaCtxtName;
-
-			_jcaProp = new Properties();
-			_sysProp = new Properties(_jcaProp);
-			_usrProp = new Properties(_sysProp);
+			this.debug       = debug;
 
 			try {
 				is = CaxyJcaProp.class.getResourceAsStream( "JCALibrary.properties" );
 				if ( null == is ) {
 					throw new RuntimeException("not found");
 				}
-				_jcaProp.load( is );
-
+				props[JCA_PROP].load( is );
 			} catch ( Throwable e ) {
 				System.err.println("Unable to load built-in resources: " + e.getMessage());
 			}
 
 			try {
-				path = System.getProperty( "java.home" ) + pathSep + "lib" + pathSep + "JCALibrary.properties";
-				_sysProp.load( new FileInputStream( path ) );
+				propn[SYS_PROP] = System.getProperty( "java.home" ) + pathSep + "lib" + pathSep + "JCALibrary.properties";
+				props[SYS_PROP].load( new FileInputStream( propn[SYS_PROP] ) );
 			} catch ( Throwable e ) {
 				/* silently ignore */
 			}
 
 			try {
-				path = System.getProperty( "gov.aps.jca.JCALibrary.properties", null );
-				if ( null == path ) {
-					path = System.getProperty( "user.home" ) + pathSep + ".JCALibrary" + pathSep + "JCALibrary.properties";
+				propn[USR_PROP] = System.getProperty( "gov.aps.jca.JCALibrary.properties", null );
+				if ( null == propn[USR_PROP] ) {
+					propn[USR_PROP] = System.getProperty( "user.home" ) + pathSep + ".JCALibrary" + pathSep + "JCALibrary.properties";
 				}
-				_usrProp.load( new FileInputStream( path ) );
+				props[USR_PROP].load( new FileInputStream( propn[USR_PROP] ) );
 			} catch ( Throwable e ) {
 			}
+		}
+
+		public CaxyJcaProp(String jcaCtxtName)
+			throws IOException
+		{
+			this( jcaCtxtName, false );
 		}
 
 		public String getJcaProperty(String key, String def)
 		{
 		String rval = null;
 
+			if ( debug )
+				System.err.format("JCA Property; original key '%s'\n", key);
+
 			if ( null != jcaCtxtName ) {
-				rval = getProperty( new String( jcaCtxtName + "." +  key ), def );
+				if ( debug )
+					System.err.println("Trying context prefix from commandline:");
+				rval = getProperty( new String( jcaCtxtName + "." +  key ), def);
 			}
 
 			if ( null == rval ) {
-				rval = getProperty( new String( jcaDfltCtxtName + "." + key ), def );
+				if ( debug )
+					System.err.println("Trying default context prefix:");
+				rval = getProperty( new String( jcaDfltCtxtName + "." + key ), def);
 			} 
 			return rval;
 		}
@@ -85,7 +98,37 @@ class CaxyJcaProp {
 
 		public String getProperty(String key, String def)
 		{
-			return System.getProperty( key, _usrProp.getProperty( key, def ) );
+		String rval;
+		int    i;
+
+			if ( debug )
+				System.err.format("Property '%s' from ", key);
+
+			rval = System.getProperty( key );
+			if ( null != rval ) {
+				if ( debug )
+					System.err.format("SYSTEM");
+			} else {
+				for ( i = 0; i < props.length; i++ ) {
+					rval = props[i].getProperty( key );
+					if ( null != rval ) {
+						if ( debug )
+							System.err.format("%s", propn[i]);
+						break;
+					}
+				}
+			}
+
+			if ( null == rval ) {
+				rval = def;
+				if ( debug )
+					System.err.format("DEFAULT");
+			}
+
+			if ( debug )
+				System.err.println(": '" + rval + "'");
+
+			return rval;
 		}
 
 		public String getProperty(String key)
