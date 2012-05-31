@@ -149,4 +149,13 @@ class CaxyJcaProp {
 			}
 			return def;
 		}
+
+		boolean getJcaBoolProperty(String key, boolean def)
+		{
+		String str;
+			if ( (str = getJcaProperty(key)) != null ) {
+				return Boolean.valueOf(str);
+			}
+			return def;
+		}
 }
