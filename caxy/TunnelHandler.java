@@ -10,10 +10,11 @@ import java.io.FileNotFoundException;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
-import java.util.Arrays;
 import java.util.StringTokenizer;
 import java.lang.Runtime;
 import java.util.Properties;
+import java.util.LinkedList;
+import java.util.ListIterator;
 
 import gnu.getopt.Getopt;
 
@@ -109,8 +110,14 @@ class TunnelHandler {
 			if ( sa.isUnresolved() ) {
 				System.err.println("Ignoring unresolved address: "+host+":"+port);
 			} else {
-				udp_dst = Arrays.copyOf(udp_dst, udp_dst.length + 1);
-				udp_dst[udp_dst.length-1] = sa;
+				int i;
+				InetSocketAddress [] oa = udp_dst;
+				udp_dst = new InetSocketAddress[udp_dst.length+1];
+				/* Avoid Arrays.copyOf - not in java 1.4 */
+				for ( i=0; i<udp_dst.length; i++ ) {
+					udp_dst[i] = oa[i];
+				}
+				udp_dst[i] = sa;
 			}
 		}
 	}
@@ -206,7 +213,7 @@ class TunnelHandler {
 	Getopt                g      = new Getopt(name, args, "a:d:hIJ:p:P:v");
 	int                   opt;
 	boolean               inside = false;
-	String              []alist  = new String[0];
+	LinkedList<String>    alist  = new LinkedList<String>();
 	OutputStream          os     = null;
 	CaxyJcaProp           props  = null;
 	String                jcaPre = null;
@@ -216,8 +223,7 @@ class TunnelHandler {
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
 				case 'a':
-					alist = Arrays.copyOf( alist, alist.length + 1 );
-					alist[alist.length - 1] = g.getOptarg();
+					alist.add( g.getOptarg() );
 				break;
 	
 				case 'd':
@@ -300,9 +306,16 @@ class TunnelHandler {
 		props = null;
 
 		if ( 0 == tunnel_port ) {
-			if ( g.getOptind() < args.length && ! inside ) {
-				String [] cmd_args = Arrays.copyOfRange( args, g.getOptind(), args.length );
-				Process   p = Runtime.getRuntime().exec(cmd_args);
+			int l = args.length - g.getOptind(), i, j;
+			if ( l > 0 && ! inside ) {
+				Process   p;
+				String [] cmd_args = new String[l];
+		
+				j = g.getOptind();
+				for ( i=0; i<l; i++ )
+					cmd_args[i] = args[j + i];
+
+				p       = Runtime.getRuntime().exec(cmd_args);
 				outStrm = new PktOutStrmChannel(( (os = p.getOutputStream())));
 				inpStrm = new PktInpChannel(Channels.newChannel(p.getInputStream()));
 				new Errlog(p.getErrorStream());
@@ -328,16 +341,16 @@ class TunnelHandler {
 			tunlHdlr = new TunnelHandler( inpStrm );
 
 			if ( inside ) {
-				int i;
+				ListIterator i;
 				if ( null != env_addrlst ) {
-					alist = Arrays.copyOf( alist, alist.length + 1 );
-					alist[alist.length-1] = env_addrlst;
+					alist.add( env_addrlst );
 					env_addrlst           = null;
 				}
-				for (i=0; i<alist.length; i++) {
-					tunlHdlr.addDstAddresses(alist[i], server_port);
-				}
 
+				for ( i = alist.listIterator(); i.hasNext(); ) {
+					tunlHdlr.addDstAddresses( (String)i.next(), server_port );
+				}
+				
 				if ( tunlHdlr.udp_dst.length == 0 ) {
 					System.err.format("Error: NO CA ADDRESS LIST in -I mode\n\n");
 					System.err.format("Must set %s or use '-a' (using %s)\n\n",
