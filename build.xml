@@ -13,7 +13,7 @@
 		<mkdir dir="${bld}"/>
 	</target>
 
-	<target name="compile" depends="init,vers" description="compile">
+	<target name="compile" depends="init,mkvers" description="compile">
 		<property name="blax" refid="classpath"/>
 		<echo   message="My classpath ${blax}"/>
 		<javac includeantruntime="false" srcdir="${src}" destdir="${bld}" debug="true" debuglevel="lines,source">
@@ -55,18 +55,34 @@
 
 	<target name="havegit">
 		<available file=".git" property="git.present"/>
+		<condition property="versjava.needed">
+			<or>
+				<isset property="git.present"/>
+				<not>
+					<available file="${src}/CaxyVers.java"/>
+				</not>
+			</or>
+		</condition>
+		<echo message="versjava.needed: ${versjava.needed}, git.present: ${git.present}"/>
 	</target>
 
-	<target name="vers" depends="havegit" if="git.present">
+	<target name="gitvers" depends="havegit" if="git.present">
 		<echo message="git describe --always"/>
 		<exec executable="git" logError="true" outputproperty="git_version_string">
 			<arg value="describe"/>
 			<arg value="--always"/>
 		</exec>
 		<echo message="VERSION IS: ${git_version_string}"/>
-		<replaceregexp file="${src}/CaxyVers.java"
-                       match="VERSION_STR.*"
-		               replace="VERSION_STR=&quot;${git_version_string}&quot;"
+	</target>
+
+	<target name="mkvers" depends="gitvers" if="versjava.needed">
+		<condition property="git_version_string" value="unknown">
+			<not>
+				<isset property="git_version_string"/>
+			</not>
+		</condition>
+		<echo file="${src}/CaxyVers.java"
+		      message="package caxy;&#xa;class CaxyVers {&#xa;&#x9;public static final String VERSION_STR=&quot;${git_version_string}&quot;;&#xa;}&#xa;"
 		/>
 	</target>
 
