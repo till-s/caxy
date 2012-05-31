@@ -245,7 +245,7 @@ class ClntProxy extends Thread {
 				clnt = new ClntProxy( 0 == port ? INSIDE : OUTSIDE, clnt_address, clnt_port, port );
 				num_clnts++;
 			} else {
-				clnt = list.removeLast();
+				clnt = (ClntProxy)list.removeLast();
 				clnt.setMyAddr( clnt_address, clnt_port );
 			}
 
