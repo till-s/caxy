@@ -1,7 +1,8 @@
 <project name="caxy" default="dist" basedir=".">
-	<property name="src" location="caxy"/>
-	<property name="bld" location="build"/>
-	<property name="dst" location="dist"/>
+	<property name="src" relative="true" location="caxy"/>
+	<property name="bld" relative="true" location="build"/>
+	<property name="dst" relative="true" location="dist"/>
+	<property name="sdt" relative="true" location="srcdist"/>
 
 	<path id="classpath">
 		<pathelement location="."/>
@@ -12,7 +13,7 @@
 		<mkdir dir="${bld}"/>
 	</target>
 
-	<target name="compile" depends="init" description="compile">
+	<target name="compile" depends="init,vers" description="compile">
 		<property name="blax" refid="classpath"/>
 		<echo   message="My classpath ${blax}"/>
 		<javac includeantruntime="false" srcdir="${src}" destdir="${bld}" debug="true" debuglevel="lines,source">
@@ -21,8 +22,8 @@
 	</target>
 
 	<target name="copyresources" depends="compile">
-		<copy todir="${bld}/caxy">
-			<fileset file="./JCALibrary.properties"/>
+		<copy todir="${bld}/${src}">
+			<fileset dir="." file="JCALibrary.properties"/>
 		</copy>
 	</target>
 
@@ -37,8 +38,36 @@
 		</jar>
 	</target>
 
+	<target name="srcdist" depends="dist" description="jar everything">
+		<mkdir dir="${sdt}"/>
+		<jar jarfile="${sdt}/caxy.jar">
+			<fileset dir="." includes="${src}/**" excludes="**/.*.swp"/>
+			<fileset dir="." includes="${bld}/**"/>
+			<fileset dir="." includes="gnu/**,README*,JCALibrary.properties,build.xml"/>
+		</jar>
+	</target>
+
 	<target name="clean" >
 		<delete dir="${bld}"/>
 		<delete dir="${dst}"/>
+		<delete dir="${sdt}"/>
 	</target>
+
+	<target name="havegit">
+		<available file=".git" property="git.present"/>
+	</target>
+
+	<target name="vers" depends="havegit" if="git.present">
+		<echo message="git describe --always"/>
+		<exec executable="git" logError="true" outputproperty="git_version_string">
+			<arg value="describe"/>
+			<arg value="--always"/>
+		</exec>
+		<echo message="VERSION IS: ${git_version_string}"/>
+		<replaceregexp file="${src}/CaxyVers.java"
+                       match="VERSION_STR.*"
+		               replace="VERSION_STR=&quot;${git_version_string}&quot;"
+		/>
+	</target>
+
 </project>
