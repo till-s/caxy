@@ -277,7 +277,7 @@ class TunnelHandler {
 	int                   rpeatr_port;
 	int                   debug  = 0;
 	WrapHdr               wHdr   = new WrapHdr();
-	Getopt                g      = new Getopt(name, args, "a:A:d:hIJ:p:P:v");
+	Getopt                g      = new Getopt(name, args, "a:A:d:hIJ:p:P:V");
 	int                   opt;
 	boolean               inside = false;
 	LinkedList<String>    alist  = new LinkedList<String>();
@@ -331,7 +331,7 @@ class TunnelHandler {
 					jcaPre = g.getOptarg();
 				break;
 
-				case 'v':
+				case 'V':
 					System.err.println(name+" release: " + CaxyVers.VERSION_STR);
 					System.exit(0);
 				break;
@@ -570,13 +570,13 @@ class TunnelHandler {
 
 	System.err.format( "       -J             Prefix string when looking up 'JCA' context properties; e.g.,\n");
 	System.err.format( "                      'gov.aps.jca.jni.JNIContext' or 'com.cosylab.epics.caj.CAJContext'.\n");
-	System.err.format( "                      If no prefix is set or a resource with the give prefix is not found\n");
+	System.err.format( "                      If no prefix is set or a resource with the given prefix is not found\n");
 	System.err.format( "                      then a an attempt using the 'default' prefix 'gov.aps.jca.Context'\n");
 	System.err.format( "                      is made.\n\n");
 
     System.err.format( "       -h             Print this information.\n\n");
 
-    System.err.format( "       -v             Print release information\n\n");
+    System.err.format( "       -V             Print release information\n\n");
 
     System.err.format( "       --             STRONGLY RECOMMENDED if <cmd> [<args>] is used. Marks\n");
     System.err.format( "                      the end for %s's option processing. This prevents any\n", nm);
@@ -586,7 +586,7 @@ class TunnelHandler {
     System.err.format( "                      only) then a new process is spawned, trying to execute <cmd>.\n");
     System.err.format( "                      All subsequent <args> are passed on to this process.\n");
     System.err.format( "                      Most importantly, caxy's stdin/stdout streams are connected\n");
-    System.err.format( "                      to the process'es stdout/stdin, respectively. The process'es\n");
+    System.err.format( "                      to the process' stdout/stdin, respectively. The process'\n");
     System.err.format( "                      stderr stream is copied (by a dedicated thread) verbatim to\n");
     System.err.format( "                      caxy's stderr.\n");
     System.err.format( "                      This feature is extremely useful to set up a tunnel. <cmd>\n");
@@ -599,7 +599,7 @@ class TunnelHandler {
 	System.err.format( "  ENVIRONMENT:\n\n");
 
 	System.err.format( "       NOTE: Environment variables are ONLY read if the system property 'jca.use_env' is\n");
-	System.err.format( "             set to 'true' or unset and if the JCA property (using one of the JCA\n");
+	System.err.format( "             set to 'true' or unset and if the JCA property 'use_env' (using one of the JCA\n");
 	System.err.format( "             prefixes, see '-J' above) is either not set or set to 'true'\n");
 	System.err.format( "             If 'use_env' is determined to be 'false' then environment variables are ignored\n");
 	System.err.format( "             and JCA properties 'server_port', 'repeater_port', 'addr_list' and 'auto_addr_list'\n");
@@ -610,7 +610,7 @@ class TunnelHandler {
 	System.err.format( "             JCA property 'gov.aps.jca.JCALibrary.properties' or if such a property is not\n");
 	System.err.format( "             found then '.JCALibrary/JCALibrary.properties' in the user's home directory\n");
 	System.err.format( "             is used). If no user-specific property is found then the system-wide ones\n");
-	System.err.format( "             (located in 'lib/JCALibrary.properties' in the java home directory) are consulted\n");
+	System.err.format( "             (located in 'lib/JCALibrary.properties' in the 'java.home' directory) are consulted\n");
 	System.err.format( "             and finally, a set of built-in resources 'JCALibrary.properties'.\n");
 	System.err.format( "             This scheme essentially follows what JCA is doing.\n\n");
 
@@ -634,18 +634,22 @@ class TunnelHandler {
 	System.err.format( "                      NOTE: it is perfectly possible to use different settings\n");
 	System.err.format( "                      for EPICS_CA_SERVER_PORT on the inside and outside.\n\n");
 
-    System.err.format( "       EPICS_CA_ADDR_LIST\n");
+    System.err.format( "       EPICS_CA_ADDR_LIST (unused in 'outside' mode)\n");
     System.err.format( "                      White-space separated list of <address>[:<port>] items defining\n");
     System.err.format( "                      all addresses where the 'inside' proxy should send CA search\n");
-    System.err.format( "                      requests (unused in 'outside' mode). Consult EPICS documentation\n");
-    System.err.format( "                      for more details. Note that <address> may be a DNS name or plain\n");
-    System.err.format( "                      IP address. If no port number is given then the ('inside') value\n");
+    System.err.format( "                      requests. Consult EPICS documentation for more details.\n");
+    System.err.format( "                      Note that <address> may be a DNS name or plain IP address.\n");
+    System.err.format( "                      If no port number is given then the ('inside') value\n");
     System.err.format( "                      of EPICS_CA_SERVER_PORT is used. The contents of this variable\n");
     System.err.format( "                      are appended to all '-a' options.\n\n");
 
-    System.err.format( "       EPICS_CA_AUTO_ADDR_LIST\n");
+    System.err.format( "       EPICS_CA_AUTO_ADDR_LIST (unused in 'outside' mode)\n");
     System.err.format( "                      If unset or set to anything but 'NO' then a list of all broadcast\n");
     System.err.format( "                      addresses of all interfaces of the host is computed and appended\n");
     System.err.format( "                      to any addresses present in EPICS_CA_ADDR_LIST and '-a' options.\n\n");
+    System.err.format( "                        THIS FEATURE IS NOT AVAILABLE UNDER JAVA < 1.6\n\n");
+    System.err.format( "                      Usage of an 'auto_addr_list' can also be forced on or off by means\n");
+    System.err.format( "                      of a '-A true' or '-A false' command line option which takes\n");
+    System.err.format( "                      precedence if present.\n\n");
 	}
 }
