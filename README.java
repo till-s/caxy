@@ -49,14 +49,9 @@ BUILDING java caxy
 If you decide to hack around and you want to rebuild the
 java version then read this section. If you just want to use
 caxy then the pre-built 'caxy.jar' should be enough on any
-platform that supports at least java-1.6.
-
-Note that the build process is orthogonal to the C version.
-The C version is built using EPICS Makefiles but this process
-will not build the java version.
-
-Likewise, building the java version will not do anything
-to the C version.
+platform that supports at least java-1.6 (you can rebuild
+'caxy.jar' under 1.5. This will work, too, but you won't
+have auto_addr_list support.)
 
 For building the java version you need jdk and ant.
 Simply chdir to the top directory (holding the file 'build.xml')

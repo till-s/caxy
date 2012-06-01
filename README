@@ -1,7 +1,13 @@
-CA Tunneling with CAXY
-----------------------
+CA Tunneling with CAXY and SSH
+------------------------------
 
 Till Straumann <strauman@slac.stanford.edu>, 2012.
+
+caxy is now also available as an implementation in java.
+This means that you don't have to compile anything but
+you can use the pre-compiled application on any platform
+supporting java (>= 1.5; 1.6 required for auto_address_list
+support).
 
 Introduction
 ------------
@@ -22,7 +28,12 @@ TCP Tunnel
 The most flexible way for tunneling CA TCP connections
 is using ssh's SOCKS proxy implementation together with
 a SOCKS wrapper implementation like tsocks or dante
-(client).
+(client) or patched versions of the EPICS CA client
+libraries (C/C++ or java, respectively). The patches
+which implement native SOCKS support for EPICS-CA
+have been submitted to the maintainers but are not yet
+present in the current releases of EPICS base or CAJ.
+Using these patches obsoletes the need for a proxifier.
 
 Assume we have two hosts 'inside' and 'outside'.
 'inside' is directly connected to the CA network,
@@ -37,8 +48,9 @@ On the 'outside' machine execute
 ssh -D 1080 user@inside
 
 This sets up a SOCKS proxy on the standard port
-1080. The ssh proxy - in combination with a
-so called 'proxifier' wrapper library - can
+1080. The ssh proxy - in combination with the 
+SOCKS-patch for EPICS or --alternatively-- a so
+called 'proxifier' wrapper library - can
 transparently tunnel TCP connections. E.g., if
 you issue
 
@@ -111,6 +123,10 @@ you *dont* have to rebuild all your CA applications!
 Just patch EPICS base and rebuild base. Nothing in
 the API that would compromise binary compatibility
 is changed by this patch.
+
+A analogous patch is available for the CAJ native
+java implementation of CA. Consult the section about CAJ
+and CSS below.
 
 UDP Tunnel
 ----------
@@ -240,7 +256,9 @@ to launch a repeater).
 Any traffic received from the 'inside' repeater is forwarded
 to the outside and sent to the repeater port on the outside 
 machine (if a caRepeater is running on the outside machine then
-all subscribed clients will receive beacons).
+all subscribed clients will receive beacons). Likewise,
+the `outside' caxy does not attempt to start a repeater nor
+check if one is running.
 
 ---------------------------------------------------
                CA-server
@@ -303,7 +321,14 @@ all subscribed clients will receive beacons).
 Command-line Arguments and Environment Variables
 ------------------------------------------------
 
+For the latest information, check the output of
+caxy's '-h' option!
+
 caxy supports the following options/switches:
+
+ -h          Prints (the latest version of) this message.
+
+ -V          Prints release/version information.
 
  -I          Run in 'inside' mode. If this switch is not
              given then run in 'outside' mode.
@@ -312,37 +337,68 @@ caxy supports the following options/switches:
              -a options and the env-var are combined into
              a single list. Only effective in 'inside' mode.
 
+ -A <bool>   Control the use of an automatically computed address
+             list (assembled from all broadcast addresses gathered
+             from the computer's network interfaces).
+             This option has the final say (other ways to control
+             this is the EPICS_CA_AUTO_ADDR_LIST env-var or
+             the 'auto_addr_list' java property. However, this
+             flag has the final say. It can be set to 'true' or
+             'false' but any value but 'true' is interpreted
+             as 'false' (-> do NOT use the auto address list).
+
+ -J <string> Prefix string when looking up 'JCA' java properties;
+             (e.g., 'gov.aps.jca.jni.JNIContext' or
+             'com.cosylab.epics.caj.CAJContext'). Caxy attempts
+             to be compatible with JCA/CAJ so that any JCA setup
+             can directly be read by caxy. However, it is not
+             possible to guess this prefix since it is normally
+             built into JCA/CAJ. If you use the 'default' prefix
+             'gov.aps.jca.Context' when defining properties then
+             you don't need this option because caxy already
+             tries it.
+
  -d <flags>  Enable debugging messages. <flags> is a
              bit-set composed of
-                   1: dump UDP messages
-                   2: dump TCP messages
-                   8: suppress beacon messages
+                   0x1: dump UDP messages
+                   0x2: dump TCP messages
+                   0x8: suppress beacon messages from debug output
+               0x20000: trace how java properties are looked up
+               0x40000: trace how CA addr list is assembled
+
 
  -p <tcp_port> Override TCP port to use for tunneling UDP. If this switch
-             is not given then the value CA_PORT_BASE (5056) is
-             used (corresponds to an old CA protocol that would not
-             work with caxy anyways).
-
-             NOTES: This switch ONLY applies to the TCP, not the UDP
-                    port.
-
-                    TCP port MUST match the ports forwarded by ssh.
-                    (However, if the TCP port is proxied with SOCKS,
-                    too, then this is transparent; in this case the -p
-                    settings on the inside must match the outside.)
-
-             If the port number is 0 then caxy uses STDIO for the
-             tunneled channel instead of a forwarded TCP connection.
+             is not given then the value 0 is used which instructs
+             caxy to use SSH's STDIO stream for tunneling UDP (see below).
+           
+             If the port number is 0 (default) then caxy uses STDIO for
+             the tunneled channel instead of a forwarded TCP connection.
              The advantage of this approach is that the vanilla
              STDIO of ssh can be used w/o the extra need of a forwarded
              connection and the need for an open TCP port on the
-             'inside' machine which may collide with other users.
+             'inside' machine which may collide with other users'.
 
              The only disadvantage is that it is not trivial to 
              nail two pipes together which connect caxy to the
              ssh client. This is especially true under windows.
 
              Luckily, caxy now helps you with this task: see '--'
+
+             NOTES: 
+               If you use this switch (with a non-zero value)
+               then it indicates the TCP port caxy should connect
+               to for tunneling its wrapped UDP traffic.
+               SSH must forward this port to the 'inside' caxy.
+
+               This switch ONLY applies to the TCP, not the UDP
+               port.
+
+               The TCP port MUST match the ports forwarded by ssh.
+               (However, if the TCP port is proxied with SOCKS,
+               too, then this is transparent; in this case the -p
+               settings on the inside must match the outside.)
+
+               You probably don't need to use this option.
 
  -- <args>   Any extra arguments given to caxy are interpreted
              as a secondary or child command and its arguments with
@@ -359,7 +415,7 @@ caxy supports the following options/switches:
              'inside' machine where you would execute an 'inside'
              version of caxy:
 
-              java -jar caxy.jar -p0 -- ssh -D 1080 user@inside java -jar caxy.jar -I -p0
+              java -jar caxy.jar -- ssh -D 1080 user@inside java -jar caxy.jar -I
 
              would bring up a complete tunnel. Note that the stderr
              stream of the child process is copied (by a dedicated
@@ -368,22 +424,51 @@ caxy supports the following options/switches:
 
              A child process is only created by caxy running in
              'outside' mode (it uses java's System.exec() method).
-             
-EPICS_CA_SERVER_PORT: Port where to listen for UDP messages ('outside'
-             mode). In 'inside' mode, the value of this variable
-             defines the default port where UDP messages are sent
-             (for addresses in the ca-address list that don't
-             explicitly specify a port).
 
-EPICS_CA_REPEATER_PORT: Port where to send repeater messages. Note
-             that 'inside' and 'outside' values may differ.
+ENVIRONMENT
+===========
+
+NOTE: Environment variables are ONLY read if the system property 'jca.use_env' is
+      set to 'true' or unset and if the JCA property 'use_env' (using one of the JCA
+      prefixes, see '-J' above) is either not set or set to 'true'
+      If 'use_env' is determined to be 'false' then environment variables are ignored
+      and JCA properties 'server_port', 'repeater_port', 'addr_list' and 'auto_addr_list'
+      are looked up, respectively.
+      JCA properties have the prefix as given (in order of precedence) by
+      '-J <prefix>', or the string 'gov.aps.jca.Context' as a fallback.
+      Properties are first looked up in the user properties (path itself defined by
+      JCA property 'gov.aps.jca.JCALibrary.properties' or if such a property is not
+      found then '.JCALibrary/JCALibrary.properties' in the user's home directory
+      is used). If no user-specific property is found then the system-wide ones
+      (located in 'lib/JCALibrary.properties' in the 'java.home' directory) are consulted
+      and finally, a set of built-in resources 'JCALibrary.properties'.
+      This scheme essentially follows what JCA is doing.
+
+      The features provided by '-J' as well as system and JCA properties are
+      aimed at easing interoperability with JCA.
+
+      
+EPICS_CA_SERVER_PORT: Port where to listen for UDP messages ('outside'
+      mode). In 'inside' mode, the value of this variable
+      defines the default port where UDP messages are sent
+      (for addresses in the ca-address list that don't
+      explicitly specify a port).
+
+EPICS_CA_REPEATER_PORT\n");
+      UDP port where %s repeater subscriptions ('inside' mode) and\n", nm);
+      beacons ('outside' mode), respectively, are sent to.\n");
+      The default value for the repeater port is 5065.\n\n", CaxyConst.CA_REPEATER_PORT);
+
+      NOTE: it is perfectly possible to use different settings\n");
+      for EPICS_CA_SERVER_PORT on the inside and outside.\n\n");
+
 
 EPICS_CA_ADDR_LIST: In 'inside' mode: list of addresses where UDP messages
              are sent to. Note that this variable has no effect 
              in 'outside' mode. The addresses in this list are 
              appended to any '-a' options given on the command line.
 
-EPICS_CA_AUTO_ADDR_LIST: In 'inside' mode: unless this is set to 'NO'
+ePICS_CA_AUTO_ADDR_LIST: In 'inside' mode: unless this is set to 'NO'
              a list of all broadcast addresses of the host's network
              interfaces is assembled and appended to the list built
 			 with -a options and EPICS_CA_ADDR_LIST.
@@ -407,23 +492,34 @@ NOTE: The server and repeater port definitions may differ on
       setting but may just use the default ones.
 
 Examples:
-
-###FIXME
+=========
 
 Simple Example:
 
-      ssh -t -D 1080 inside caxy -I -a a.b.c.255
+      # Start up a tunnel using STDIO to communicate with the inside:
 
-	  # from now on all programs are 'socksified'
+        java -jar caxy.jar -- ssh -D1080 user@insidehost java -jar caxy.jar -I
 
-      . socksify
-      caxy &
-      caget some_PV
+      # Use PATCHED version of EPICS base;
+
+        export EPICS_SOCKS_PROXY=localhost
+
+        caget some_PV
+
+        edm -x some_edm_screen
+
+Example using non-patched EPICS base (with DANTE proxifier under linux)
+		
+      # Start up the tunnel as in the example above
+
+        java -jar caxy.jar -- ssh -D1080 user@insidehost java -jar caxy.jar -I
+
+      # from now on all programs are 'socksified'
+
+        . socksify
+        caget some_PV
 
       # corresponding dante.conf routes (only 'from' lines):
-      ...
-      # caxy TCP connection
-      from: 0.0.0.0/0 to: 127.0.0.1/32 port 5056 via: 127.0.0.1 port = 1080
       ...
       # all tcp connections to a.b.c.0/24
       from: 0.0.0.0/0 to: a.b.c.0/24 via: 127.0.0.1 port = 1080
@@ -432,16 +528,16 @@ Simple Example:
 caxy TCP can also be tunneled explicitly via ssh:
 
       # CA on a.b.c.255 subnet uses port 5066
+      # We use port 5056 for caxy's tunnel instead of STDIO
 
-      ssh -t -D 1080 -L 5056:localhost:5056 inside caxy -I -a a.b.c.255:5066
+        ssh -t -D 1080 -L 5056:localhost:5056 user@insidehost caxy -I -p5056 -a a.b.c.255:5066
 
-      # caxy on localhost is *not* socksified but CA clients are:
+      # caxy on outside is *not* socksified but CA clients are:
 
-      caxy &
-      . socksify
-      caget some_PV
+        java -jar caxy.jar -p 5056 &
 
-      # dante.conf would only need a route for a.b.c.0/24 in this setup
+        . socksify
+        caget some_PV
 
 multihop tunnel to 'inside' via 'hop':
 
@@ -450,20 +546,34 @@ multihop tunnel to 'inside' via 'hop':
       # must be set up. Also (and in the above examples alike), anyone
       # on 'outside' can use the proxy port 1080.
 
-      ssh -tt -L 1080:localhost:1080 hop ssh -tt -D 1080 inside caxy -I -a a.b.c.255
+        java -jar caxy.jar -- ssh -L 1080:localhost:1080 hophost ssh -D 1080 insidehost java -jar caxy.jar -I -a a.b.c.255
 
-      . socksify
-      caxy &
-      caget some_PV
+      # More importantly, this only works for ONE user on 'hop'. A second user
+      # would find 1080 already in use and would have to use a different 
+	  # port on 'hop', e.g., 3333:
+
+        java -jar caxy.jar -- ssh -L 1080:localhost:3333 hophost ssh -tt -D 3333 insidehost java -jar caxy.jar -I -a a.b.c.255
+
+      # use socksified CA client
+
+        . socksify
+        caget some_PV
 
 
       # a better approach to set up a multihop tunnel is using ssh's
       # 'ProxyCommand'. This avoids any intermediate port on the 
-      # gateway/'hop' machine. It is more convenient to set up a 'config' file.
+      # gateway/'hop' machine. It is more convenient to set this
+      # up in the 'config' file.
       # The example uses command line options just to illustrate
       # the setup:
 
-      ssh -t -D 1080 -o 'ProxyCommand=ssh hop /usb/bin/nc %h %p' inside caxy -I -a a.b.c.255
+        java -jar caxy.jar -- ssh -D 1080 -o 'ProxyCommand=ssh hophost /usr/bin/nc %h %p' insidehost java -jar caxy.jar -I -a a.b.c.255
+
+Windows:
+      # Under windows, caxy works perfectly, e.g., in combination with the
+      # PUTTY ssh client.
+      # Especially for a multi-hop setup you would want to set up a configuration
+      # which you then call up from the command line (plink).
 
 CAJ and CSS
 ===========
@@ -472,7 +582,7 @@ It is possible to tunnel CA for client applications which
 use the 'CAJ' java implementation of the CA protocol such as
 the CSS suite.
 
-The 'caxy' proxy must be started exactly in the same way
+The 'caxy' tunnel must be started exactly in the same way
 as described above.
 
 However, 'socksify-ing' the JVM may or may not work on
@@ -537,8 +647,8 @@ You only must remember to disable the proxy in the
 CAS - Channel Access Security Issues
 ====================================
 If CAS is enabled and configured on an IOC then you may be denied
-access to a PV. Note that there is no warning or error, the PV just
-seems to be unreachable or unwriteable.
+access to a PV. Note that some CA clients produce no warning or
+error, the PV just seems to be unreachable or unwriteable.
 
 To understand the issue here it is necessary to know that CAS
 authentication is based on a 'user name' and a 'host name'. These
@@ -573,14 +683,6 @@ a single CA message.
 CATUN protocol V2 remedies this and wraps an entire
 UDP datagram so that the original packet structure is
 preserved.
-
-The 'inside' caxy algorithm is backwards compatible, i.e.,
-if an 'outside' caxy which doesn't implement V2 yet connects
-then the 'inside' falls back on the V1 protocol.
-
-However, if the 'inside' does not support V2 yet then the
-'outside' caxy may be started with the '-v1' option
-instructing it to use protocol version V1.
 
 Note that the java version of caxy ONLY support protocol
 version 2. Hence it is not possible to co-operate
