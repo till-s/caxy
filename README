@@ -22,6 +22,74 @@ and documents the 'caxy' proxy software that
 encapsulates (and modifies) CA-UDP messages for
 tunneling them via TCP.
 
+Quick Instructions for the Impatient
+------------------------------------
+
+Terminology
+- - - - - - -
+'insidehost':  ssh-reachable machine on CA network; has
+               direct connectivity to IOCs.
+'outsidehost': 'laptop' out on the internet. Wishes to
+               reach CA network via secure tunnel.
+
+Prerequisites
+- - - - - - -
+ - java 1.6 (can also be built to work with 1.5) on
+   both: inside + outside.
+ - caxy.jar on both, inside + outside.
+ - patched EPICS CA libraries OR proxyfier software
+   (tsocks OR dante - linux, proxycap - windows).
+   Needed on outside only.
+ - ssh client (openssh - linux, putty - windows)
+   Needed on outside only.
+
+
+1. Launch Tunnel
+- - - - - - - - -
+On outside machine issue (in command line window):
+
+LINUX:
+
+   java -jar caxy.jar -- ssh -D1080 user@insidehost java -jar caxy.jar -I
+   
+Once the tunnel is up, the message 'CAXY -- tunnel now established'
+appears. The tunnel remains running in the shell's 'foreground' and
+you can take it down by hitting <Ctrl-C> to kill it (and a few ugly
+error messages appear).
+
+WINDOWS:
+Using PUTTY; we assume a complete configuration 'inside' has already
+been created and saved under the name 'inside'. We also assume authentication
+has been resolved either using GSSAPI or public key files etc.
+As a last resort, you'd have to append a -pw <password_in_clear> option
+to the plink command here:
+
+   java -jar caxy.jar -- plink inside java -jar caxy.jar -I
+
+2. Tell CA library to Use Tunnel
+- - - - - - - - - - - - - - - - 
+
+You have to tell CA clients to use the tunnel by
+
+a) PATCHED EPICS CA library:
+
+   export EPICS_SOCKS_PROXY=localhost
+
+b) proxify current session (e.g., for DANTE -- note that config
+   file has to be set up beforehand; consult DANTE docs)
+
+   . socksify
+
+3. Use CA Clients Normally
+- - - - - - - - - - - - - -
+
+Now you can use CA clients normally:
+
+   caget my_PV
+
+DETAILED DOCUMENATION OF INNER WORKINGS AND USE
+===============================================
+
 TCP Tunnel
 ----------
 
