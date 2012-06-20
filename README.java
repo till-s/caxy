@@ -31,7 +31,7 @@ caxTo run java caxy you need jvm >= 1.6 and you start it
 java -jar <path>/caxy.jar
 
 The commandline options are the same as for the C version
-(see README) but only a subset is supported:
+(see caxy.html or run caxy with '-h') but only a subset is supported:
 
  -S, -f: 'server' mode and is not supported and thus -S, -f are
          not recognized.
