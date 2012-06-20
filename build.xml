@@ -57,7 +57,7 @@
 
 	<target name="dist" depends="copyresources" description="jar it up">
 		<mkdir dir="${dst}"/>
-		<jar jarfile="${dst}/caxy.jar">
+		<jar jarfile="${dst}/${git_version_string}.jar">
 			<fileset dir="${bld}" />
 			<fileset dir="." includes="gnu/**"/>
 			<manifest>
@@ -68,7 +68,7 @@
 
 	<target name="srcdist" depends="dist" description="jar everything">
 		<mkdir dir="${sdt}"/>
-		<jar jarfile="${sdt}/caxy-src.jar">
+		<jar jarfile="${sdt}/${git_version_string}-source.jar">
 			<fileset dir="." includes="${src}/**" excludes="**/.*.swp"/>
 			<fileset dir="." includes="${bld}/**"/>
 			<fileset dir="." includes="gnu/**,README*,JCALibrary.properties,build.xml"/>
