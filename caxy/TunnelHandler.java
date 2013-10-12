@@ -5,7 +5,6 @@ import java.lang.ClassNotFoundException;
 import java.nio.ByteBuffer;
 import java.net.InetSocketAddress;
 import java.net.InetAddress;
-import java.nio.channels.SocketChannel;
 import java.nio.channels.ByteChannel;
 import java.nio.channels.Channels;
 import java.io.IOException;

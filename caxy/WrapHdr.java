@@ -2,7 +2,6 @@ package caxy;
 
 import java.nio.ByteBuffer;
 import java.net.SocketAddress;
-import java.nio.channels.SocketChannel;
 import java.io.IOException;
 
 class WrapHdr {
