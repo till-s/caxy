@@ -4,7 +4,6 @@ import java.nio.ByteBuffer;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.channels.Channels;
-import java.nio.channels.SocketChannel;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.ByteChannel;
 import java.nio.channels.ReadableByteChannel;
@@ -130,7 +129,7 @@ class PktBidChannel {
 			bc = sc.accept();
 		} else {
 			InetSocketAddress sa = new InetSocketAddress( "localhost", port );
-			bc = SocketChannel.open( sa );
+			bc = ProxifiedSocketChannel.open( sa );
 		}
 	}
 
