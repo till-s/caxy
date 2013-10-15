@@ -26,7 +26,6 @@ class CaPkt {
 
 	public CaPkt()
 	{
-	int i;
 		b = ByteBuffer.allocate( CA_HDR_SIZE );
 		b.clear();
 		while ( b.hasRemaining() )

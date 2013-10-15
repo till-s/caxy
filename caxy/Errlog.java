@@ -44,7 +44,7 @@ class Errlog extends Thread {
 		}
 	}
 
-	public void start( Class c )
+	public void start(Class<? extends Errlog> c)
 	{
 		/* start thread only if this constructor is not called
 		 * from a subclass (so that a subclass could do more

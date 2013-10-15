@@ -42,7 +42,7 @@ class ClntProxy extends Thread {
 		debug     = debug_in;
 	}
 
-	public void start(Class c)
+	public void start(Class<? extends ClntProxy> c)
 	{
 		/* Start only if we are an instance of 'c'.
 		 * If we are a superclass then start() should
@@ -226,9 +226,9 @@ class ClntProxy extends Thread {
 	ClntProxy    clnt;
 
 		synchronized( list ) {
-			ListIterator i = list.listIterator();
+			ListIterator<ClntProxy> i = list.listIterator();
 			while ( i.hasNext() ) {
-				clnt = (ClntProxy)i.next();
+				clnt = i.next();
 				if ( clnt.pxy_addr == clnt_address && clnt.pxy_port == clnt_port ) {
 					if ( 0 != i.previousIndex() ) {
 						/* bring to the front */

@@ -45,20 +45,20 @@
  */ 
 
 package caxy;
-import  java.nio.channels.SocketChannel;
-import  java.nio.channels.Selector;
-import  java.nio.channels.SelectionKey;
-import  java.nio.ByteBuffer;
-import  java.net.ProxySelector;
-import  java.net.Proxy;
-import  java.net.Proxy.Type;
-import  java.net.InetSocketAddress;
-import  java.net.SocketAddress;
-import  java.net.SocketException;
-import  java.lang.Exception;
-import  java.io.IOException;
-import  java.util.Iterator;
-import  java.net.URI;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.Proxy.Type;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
+import java.net.SocketException;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.util.Iterator;
+import java.util.List;
 
 /*
  * ProxifiedSocketChannel
@@ -126,9 +126,7 @@ import  java.net.URI;
  */
 class ProxyList {
 
-	protected Iterator proxyListIterator;
-
-	private   ProxyList() {}
+	protected Iterator<Proxy> proxyListIterator;
 
 	protected ProxyList(SocketAddress remote)
 	{
@@ -136,7 +134,7 @@ class ProxyList {
 		// is quite limited!
 		ProxySelector     psel   = ProxySelector.getDefault();
 		URI               dstUri = null;
-		java.util.List    plst   = null;
+		List<Proxy>       plst   = null;
 		InetSocketAddress isa    = (InetSocketAddress)remote;
 
 			// build an URI from a SocketAddress -- surprisingly this seems to be quite
@@ -323,7 +321,6 @@ public class ProxifiedSocketChannel {
 	int          len = SOCKS5_REQ_LEN;
 	byte[]       hn  = null;
 	byte[]       ha  = null;
-	byte         sta;
 	byte         addr;
 
 		// FIXME: retrieve username to use for this proxy. Proxy class currently doesn't
@@ -428,7 +425,7 @@ public class ProxifiedSocketChannel {
 			throw new SocketException("SOCKS5 server replied version != 5");
 		}
 
-		switch ( (sta = rep.get()) ) {
+		switch ( rep.get() ) {
 			case SOCKS5_STA_GRANTED          :
 			break;
 
@@ -685,7 +682,6 @@ public class ProxifiedSocketChannel {
 	String        s  = "hello\n";
 	SocketAddress sa = null;
 	SocketChannel c  = null;
-	int           i;
 
 		if ( args.length > 0 )
 			hn = args[0];

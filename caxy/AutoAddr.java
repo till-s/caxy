@@ -1,13 +1,12 @@
 package caxy;
 
+import java.net.InetAddress;
+import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.util.Enumeration;
-import java.util.List;
 import java.util.LinkedList;
 import java.util.ListIterator;
-import java.net.SocketException;
-import java.net.InterfaceAddress;
-import java.net.InetAddress;
 
 class AutoAddr {
 	private AutoAddr()
@@ -16,12 +15,13 @@ class AutoAddr {
 
 	public static InetAddress [] getList(boolean debug)
 	{
-	Enumeration      ifs;
-	ListIterator     adi;
+	Enumeration<NetworkInterface>      ifs;
+	ListIterator<InterfaceAddress>     adi;
 	NetworkInterface nif;
 	InterfaceAddress ifa;
 	InetAddress      bca;
 	LinkedList<InetAddress> bcl = new LinkedList<InetAddress>();
+	ListIterator<InetAddress> bci;
 	InetAddress []   rval;
 	int              i;
 
@@ -30,13 +30,13 @@ class AutoAddr {
 
 		try {
 		for ( ifs = NetworkInterface.getNetworkInterfaces(); ifs.hasMoreElements(); ) {
-			nif = (NetworkInterface)ifs.nextElement();
+			nif = ifs.nextElement();
 
 			if ( debug )
 				System.err.println("Checking interface: "+nif.getDisplayName());
 
 			for ( adi = nif.getInterfaceAddresses().listIterator(); adi.hasNext(); ) {
-				ifa = (InterfaceAddress)adi.next();
+				ifa = adi.next();
 				bca = ifa.getBroadcast();
 
 				if ( debug ) {
@@ -56,8 +56,8 @@ class AutoAddr {
 
 		rval = new InetAddress [bcl.size()];
 
-		for ( adi = bcl.listIterator(), i = 0; adi.hasNext(); i++ ) {
-			rval[i] = (InetAddress)adi.next();
+		for ( bci = bcl.listIterator(), i = 0; bci.hasNext(); i++ ) {
+			rval[i] = bci.next();
 		}
 
 		return rval;

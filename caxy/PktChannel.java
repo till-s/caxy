@@ -18,6 +18,7 @@ class PktOutChannel {
 	protected WritableByteChannel chnl;
 
 	class IncompleteBufferWrittenException extends Exception {
+		private static final long serialVersionUID = 3662593742711295725L;
 		int put, wanted;
 		protected IncompleteBufferWrittenException(int put_in, int wanted_in)
 		{
@@ -31,6 +32,12 @@ class PktOutChannel {
 		chnl  = chnl_in;
 	}
 
+	// I get a warning:
+	//   "Resource leak: '<unassigned Closeable value>' is never closed"
+	// However, this seems to be bogus since the channel returned by getChannel()
+	// actually *is* closeable (and there is a run-time error if the FileOutputStream
+	// is closed here).
+	@SuppressWarnings("resource")
 	public static PktOutChannel getStdout()
 	{
 		return new PktOutChannel( (new FileOutputStream(java.io.FileDescriptor.out)).getChannel());
@@ -148,6 +155,7 @@ class PktInpChannel {
 	protected ReadableByteChannel chnl;
 
 	class IncompleteBufferReadException extends Exception {
+		private static final long serialVersionUID = 1904012812499522626L;
 		int got, wanted;
 		protected IncompleteBufferReadException(int got_in, int wanted_in)
 		{
@@ -161,6 +169,12 @@ class PktInpChannel {
 		chnl = chnl_in;
 	}
 
+	// I get a warning:
+	//   "Resource leak: '<unassigned Closeable value>' is never closed"
+	// However, this seems to be bogus since the channel returned by getChannel()
+	// actually *is* closeable (and there is a run-time error if the FileInputStream
+	// is closed here).
+	@SuppressWarnings("resource")
 	public static PktInpChannel getStdin()
 	{
 		return new PktInpChannel( (new FileInputStream(java.io.FileDescriptor.in)).getChannel());
@@ -171,8 +185,7 @@ class PktInpChannel {
 		throws IOException, IncompleteBufferReadException
 	{
 		int here = b.position();
-		int got;
-		while ( b.remaining() > 0 && (got = chnl.read(b)) > 0 )
+		while ( b.remaining() > 0 && chnl.read(b) > 0 )
 			/* nothing else to do */;
 		if ( b.remaining() > 0 )
 			throw new IncompleteBufferReadException(b.position() - here, b.limit());

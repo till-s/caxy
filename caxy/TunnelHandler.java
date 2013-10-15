@@ -421,14 +421,14 @@ class TunnelHandler {
 			tunlHdlr = new TunnelHandler( inpStrm );
 
 			if ( inside ) {
-				ListIterator i;
+				ListIterator<String> i;
 				if ( null != env_addrlst ) {
 					alist.add( env_addrlst );
 					env_addrlst           = null;
 				}
 
 				for ( i = alist.listIterator(); i.hasNext(); ) {
-					tunlHdlr.addDstAddresses( (String)i.next(), server_port );
+					tunlHdlr.addDstAddresses( i.next(), server_port );
 				}
 
 				if ( auto_alist ) {

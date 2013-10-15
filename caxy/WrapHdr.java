@@ -87,6 +87,7 @@ class WrapHdr {
 	}
 
 	class CaxyBadVersionException extends Exception {
+		private static final long serialVersionUID = 3931551856066985968L;
 		public final int badVersion;
 		protected CaxyBadVersionException(int version)
 		{
