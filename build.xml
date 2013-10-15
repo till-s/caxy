@@ -61,7 +61,7 @@
 			<fileset dir="${bld}" />
 			<fileset dir="." includes="gnu/**"/>
 			<manifest>
-				<attribute name="Main-Class" value="caxy.TunnelHandler"/>
+				<attribute name="Main-Class" value="caxy.CaxyMain"/>
 			</manifest>
 		</jar>
 	</target>
