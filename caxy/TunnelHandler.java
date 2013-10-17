@@ -6,13 +6,157 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.StringTokenizer;
 
-class TunnelHandler {
+class TunnelHandlerEnv {
+	final boolean inside;
+	final int     server_port;
+	final int     repeater_port;
+	final int     debug;
+
+	private InetSocketAddress udp_dst[] = new InetSocketAddress[0];
+
+	TunnelHandlerEnv(boolean inside, int server_port, int repeater_port, int debug)
+	{
+		this.inside        = inside;
+		this.server_port   = server_port;
+		this.repeater_port = repeater_port;
+		this.debug         = debug;
+	}
+
+	/* extend array by 'n' slots; not synchronized because caller is */
+	protected int arrext(int n)
+	{
+	int i;
+	InetSocketAddress [] oa = udp_dst;
+	int rval                = udp_dst.length;
+
+		udp_dst = new InetSocketAddress[rval + n];
+		/* Avoid Arrays.copyOf - not in java 1.4 */
+		for ( i=0; i<oa.length; i++ ) {
+			udp_dst[i] = oa[i];
+		}
+		return rval;
+	}
+
+	/* Not efficient but only done once, during initialization */
+	protected boolean present(InetSocketAddress sa)
+	{
+	int i;
+		if ( null == sa )
+			return true;
+
+		for ( i=0; i<udp_dst.length; i++ ) {
+			if ( udp_dst[i].equals( sa ) )
+				return true;
+		}
+		return false;
+	}
+
+	public synchronized void addDstAddress(InetSocketAddress sa)
+	{
+		/* Only add if not there already */
+		if ( ! present( sa ) ) {
+		int idx = arrext(1);
+			udp_dst[idx] = sa;
+		}
+	}
+
+	public synchronized void addDstAddresses(InetAddress []sa, int port)
+	{
+	int l;
+	int idx;
+	int i,nl;
+	InetSocketAddress []buf;
+
+		if ( null == sa )
+			return;
+
+		l   = sa.length;
+		buf = new InetSocketAddress[l];
+
+		for ( i=0, nl=l; i<l; i++ ) {
+			if ( (present( buf[i] = new InetSocketAddress( sa[i], port ) )) ) {
+				buf[i] = null;
+				nl--;
+			}
+		}
+
+		idx = arrext(nl);
+
+		for ( i = 0, nl=0; i < l; i++ ) {
+			if ( null != buf[i] ) {
+				udp_dst[idx + nl++] = buf[i];
+			}
+		}
+	}
+
+	public static InetSocketAddress cvtAddress(String s, int port)
+		throws java.lang.NumberFormatException
+	{
+	StringTokenizer   st = new StringTokenizer(s,":");
+	InetSocketAddress sa;
+		if ( st.countTokens() > 0 ) {
+			String host = st.nextToken();
+			if ( st.hasMoreTokens() ) {
+				port = Integer.decode( st.nextToken() ).intValue();
+			}
+			sa = new InetSocketAddress(host, port);
+			if ( sa.isUnresolved() ) {
+				System.err.println("Ignoring unresolved address: "+host+":"+port);
+			} else {
+				return sa;
+			}
+		}
+		return null;
+	}
+
+	public void addDstAddress(String s, int port)
+		throws java.lang.NumberFormatException
+	{
+	InetSocketAddress sa = cvtAddress(s, port);
+		if ( null != sa )
+			addDstAddress( sa );
+	}
+
+	public void addDstAddresses(String addresses, int defaultPort)
+		throws java.lang.NumberFormatException
+	{
+	StringTokenizer     st = new StringTokenizer(addresses);
+		while ( st.hasMoreTokens() ) {
+			addDstAddress( st.nextToken(), defaultPort );
+		}
+	}
+
+	public synchronized void dumpDstAddresses()
+	{
+	int i;
+		System.err.println("CA Address list:");
+		for ( i=0; i<udp_dst.length; i++ ) {
+			System.err.println("  "+udp_dst[i]);
+		}
+	}
+
+	public synchronized InetSocketAddress [] get()
+	{
+		return udp_dst.clone();
+	}
+
+	public synchronized int getLength()
+	{
+		return udp_dst.length;
+	}
+}
+
+class TunnelHandler implements Runnable {
+
 	PktInpChannel     pktStream;
 	WrapHdr           wHdr;
 	ByteBuffer        buf;
 	InetSocketAddress [] udp_dst;
+	ClntProxyPool     proxyPool;
 
 	INSACache         insaCache;
+
+	TunnelHandlerEnv  env;
 
 	static final int  TCP_BUFSZ = 10000;
 
@@ -74,117 +218,27 @@ class TunnelHandler {
 		}
 	}
 
-	protected TunnelHandler(PktInpChannel pktStream_in)
+	protected TunnelHandler(ClntProxyPool proxyPool_in, PktInpChannel pktStream_in, TunnelHandlerEnv env_in)
 	{
+		env       = env_in;
+		udp_dst   = env.get();
+		if ( null == udp_dst )
+			udp_dst = new InetSocketAddress[0];
+		proxyPool = proxyPool_in;
 		pktStream = pktStream_in;
 		wHdr      = new WrapHdr();
 		buf       = ByteBuffer.allocate(TCP_BUFSZ);
-		udp_dst   = new InetSocketAddress[0];
 		insaCache = new INSACache();
 	}
 
-	/* extend array by 'n' slots; not synchronized because caller is */
-	protected int arrext(int n)
-	{
-	int i;
-	InetSocketAddress [] oa = udp_dst;
-	int rval                = udp_dst.length;
-
-		udp_dst = new InetSocketAddress[rval + n];
-		/* Avoid Arrays.copyOf - not in java 1.4 */
-		for ( i=0; i<oa.length; i++ ) {
-			udp_dst[i] = oa[i];
-		}
-		return rval;
-	}
-
-	/* Not efficient but only done once, during initialization */
-	protected boolean present(InetSocketAddress sa)
-	{
-	int i;
-		for ( i=0; i<udp_dst.length; i++ ) {
-			if ( udp_dst[i].equals( sa ) )
-				return true;
-		}
-		return false;
-	}
-
-	public synchronized void addDstAddress(InetSocketAddress sa)
-	{
-		/* Only add if not there already */
-		if ( ! present( sa ) ) {
-		int idx = arrext(1);
-			udp_dst[idx] = sa;
-		}
-	}
-
-	public synchronized void addDstAddresses(InetAddress []sa, int port)
-	{
-	int l   = sa.length;
-	int idx;
-	int i,nl;
-	InetSocketAddress []buf = new InetSocketAddress[l];
-
-		for ( i=0, nl=l; i<l; i++ ) {
-			if ( (present( buf[i] = new InetSocketAddress( sa[i], port ) )) ) {
-				buf[i] = null;
-				nl--;
-			}
-		}
-
-		idx = arrext(nl);
-
-		for ( i = 0, nl=0; i < l; i++ ) {
-			if ( null != buf[i] ) {
-				udp_dst[idx + nl++] = buf[i];
-			}
-		}
-	}
-
-	public void addDstAddress(String s, int port)
-		throws java.lang.NumberFormatException
-	{
-	StringTokenizer   st = new StringTokenizer(s,":");
-	InetSocketAddress sa;
-		if ( st.countTokens() > 0 ) {
-			String host = st.nextToken();
-			if ( st.hasMoreTokens() ) {
-				port = Integer.decode( st.nextToken() ).intValue();
-			}
-			sa = new InetSocketAddress(host, port);
-			if ( sa.isUnresolved() ) {
-				System.err.println("Ignoring unresolved address: "+host+":"+port);
-			} else {
-				addDstAddress( sa );
-			}
-		}
-	}
-
-	public void addDstAddresses(String addresses, int defaultPort)
-		throws java.lang.NumberFormatException
-	{
-	StringTokenizer st = new StringTokenizer(addresses);
-		while ( st.hasMoreTokens() ) {
-			addDstAddress( st.nextToken(), defaultPort );
-		}
-	}
-
-	public synchronized void dumpDstAddresses()
-	{
-	int i;
-		System.err.println("CA Address list:");
-		for ( i=0; i<udp_dst.length; i++ ) {
-			System.err.println("  "+udp_dst[i]);
-		}
-	}
-
-
-	public void handleStream(boolean inside, int debug)
-		throws IOException, WrapHdr.CaxyBadVersionException, PktInpChannel.IncompleteBufferReadException
+	public void handleStream()
+		throws IOException, WrapHdr.CaxyBadVersionException,
+		       PktInpChannel.IncompleteBufferReadException,
+		       ClntProxyPoolShutdownException
 	{
 	int               i, nCa, opos = 0;
-	ClntProxy         clnt;
-	boolean           need_whdr_dump = (debug & CaxyConst.DEBUG_TCP) != 0;
+	ClntProxyPool.ClntProxy clnt;
+	boolean           need_whdr_dump = (env.debug & CaxyConst.DEBUG_TCP) != 0;
 
 		wHdr.read(pktStream);
 
@@ -198,40 +252,101 @@ class TunnelHandler {
 				
 			CaPkt.read(pktStream, buf);
 
-			if ( (debug & CaxyConst.DEBUG_TCP) != 0 ) {
+			if ( (env.debug & CaxyConst.DEBUG_TCP) != 0 ) {
 				int npos = buf.position();
 				CaPkt caPkt;
 				buf.position(opos);
 				caPkt = CaPkt.get(buf);
-				if ( (caPkt.get_m_cmmd() != CaPkt.CA_PROTO_RSRV_IS_UP) || (debug & CaxyConst.DEBUG_NOB) == 0 ) {
+				if ( (caPkt.get_m_cmmd() != CaPkt.CA_PROTO_RSRV_IS_UP) || (env.debug & CaxyConst.DEBUG_NOB) == 0 ) {
 					if ( need_whdr_dump ) {
-						wHdr.dump( debug );
+						wHdr.dump( env.debug );
 						need_whdr_dump = false;
 					}
 					System.err.println("TCP: reading p #" + i + " out of " + nCa);
-					caPkt.dump( debug );
+					caPkt.dump( env.debug );
 				}
 				buf.position(npos);
 			}
 		}
 		buf.flip();
 
-		if ( ! inside ) { /* protect 'udp_dst' array */
+		if ( ! env.inside ) { /* protect 'udp_dst' array */
 			synchronized ( this ) {
 				udp_dst[0] = insaCache.get( wHdr.get_caddr(), wHdr.get_cport());
 			}
-			clnt       = ClntProxy.get( CaxyConst.INADDR_ANY, 0, 0 );
+			clnt       = proxyPool.get( CaxyConst.INADDR_ANY, 0, 0 );
 		} else {
-			clnt       = ClntProxy.get( wHdr.get_caddr(), wHdr.get_cport(), 0 );
+			clnt       = proxyPool.get( wHdr.get_caddr(), wHdr.get_cport(), 0 );
 		}
 
 		synchronized (this ) { /* protect 'udp_dst' array */
 			for ( i = 0; i < udp_dst.length; i++ ) {
 				/* if whdr has not been dumped yet then there were only beacons */
-				if ( (debug & CaxyConst.DEBUG_TCP) != 0 && ! need_whdr_dump ) {
+				if ( (env.debug & CaxyConst.DEBUG_TCP) != 0 && ! need_whdr_dump ) {
 					System.err.println("Sending UDP to: " + udp_dst[i]);
 				}
 				clnt.putBuf(buf, udp_dst[i]);
+			}
+		}
+	}
+
+	public void shutdown() {
+		// closing all the IO channels should cause all the threads to die...
+		try {
+			pktStream.close();
+		} catch (IOException e) {
+		}
+		proxyPool.shutdown();
+	}
+
+	public void execute()
+		throws IOException, PktInpChannel.IncompleteBufferReadException,
+		       WrapHdr.CaxyBadVersionException, PktOutChannel.IncompleteBufferWrittenException,
+			   ClntProxyPoolShutdownException
+	{
+		try {
+			if ( env.inside ) {
+				WrapHdr wHdr = new WrapHdr();
+				/* read an initial packet which tells us what repeater port the 'outside' is using */
+				wHdr.read( pktStream );
+
+				new RepProxy(proxyPool, wHdr.get_cport(), env.repeater_port);
+				wHdr  = null;
+
+				System.err.println("CAXY -- tunnel now established");
+			} else {
+				/* Send initial packet (OUTSIDE only) */
+				proxyPool.sendRepPortInfo( env.repeater_port );
+
+				proxyPool.get( CaxyConst.INADDR_ANY, 0, env.server_port );
+			}
+
+			while ( true ) {
+				handleStream();
+			}
+
+		} catch (Throwable t) {
+			throw t;
+		} finally {
+			shutdown();
+		}
+	}
+
+	public void run() {
+		if ( 0 != ( env.debug & CaxyConst.DEBUG_THREAD) ) {
+			System.err.println("TunnelHandler Thread Start");
+		}
+
+		try {
+			execute();
+		} catch ( IOException e ) {
+		} catch ( PktInpChannel.IncompleteBufferReadException e ) {
+		} catch ( PktOutChannel.IncompleteBufferWrittenException e ) {
+		} catch ( WrapHdr.CaxyBadVersionException e ) {
+		} catch ( ClntProxyPoolShutdownException e ) {
+		} finally {
+			if ( 0 != ( env.debug & CaxyConst.DEBUG_THREAD) ) {
+				System.err.println("TunnelHandler Thread Exit");
 			}
 		}
 	}

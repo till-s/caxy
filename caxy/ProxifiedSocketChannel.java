@@ -595,11 +595,11 @@ public class ProxifiedSocketChannel {
 		throws IOException
 	{
 		SocketChannel     rval = null; 
+		SocketChannel     sc   = null;
 		Proxy             prxy = null;
 		InetSocketAddress isa  = null;
 		// construct a list of proxies
 		ProxyList         plst = new ProxyList( remote );
-		RuntimeException  rtE  = null;
 
 		// scan the list for SOCKS proxies and try to use the
 		// first one that works.
@@ -621,8 +621,8 @@ public class ProxifiedSocketChannel {
 				// and if that doesn't work then fall back to SOCKS4.
 				try {
 					// open a channel to the proxy
-					rval = createChannel( isa );
-					socks5Negotiate( rval, (InetSocketAddress)remote, prxy );
+					sc = createChannel( isa );
+					socks5Negotiate( sc, (InetSocketAddress)remote, prxy );
 				} catch ( SocketException e )
 				{
 
@@ -637,35 +637,38 @@ public class ProxifiedSocketChannel {
 					}
 
 					// open a new channel to the proxy
-					if ( null != rval )
-						rval.close();
-					rval = createChannel( isa );
-					socks4Negotiate( rval, (InetSocketAddress)remote, prxy );
+					if ( null != sc )
+						sc.close();
+					sc = createChannel( isa );
+					socks4Negotiate( sc, (InetSocketAddress)remote, prxy );
 				}
 // SUCCESS
 				if ( debug )
 					System.out.println("SOCKS Proxy Connection SUCCESS");
+
+				rval = sc;
+				sc   = null;
 				return rval;
 			} catch ( java.net.ConnectException e ) {
 				System.out.println("Proxy: " + prxy.address() + " refused connection" );
+				throw e;
 			} catch ( java.nio.channels.UnresolvedAddressException e ) {
 				System.out.println("Proxy: " + prxy.address() + " could not be resolved");
+				throw e;
 			} catch ( IOException e ) {
 				// This also catches SocketException
 				System.out.println("Proxy: " + prxy.address() + " " + e );
+				throw e;
 			} catch ( RuntimeException e ) {
 				System.out.println("Proxy: " + prxy.address() + " " + e );
-				rtE = e;
+				throw e;
+			} finally {
+				if ( null != sc ) {
+					System.out.println("Hmm - SOCKS Proxy Connection FAILED");
+					sc.close();
+					sc = null;
+				}
 			}
-			System.out.println("Hmm - SOCKS Proxy Connection FAILED");
-
-			if ( null != rval ) {
-				rval.close();
-				rval = null;
-			}
-			
-			if ( null != rtE )
-				throw rtE;
 		}
 
 		// try direct connection

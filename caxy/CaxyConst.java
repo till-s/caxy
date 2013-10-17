@@ -17,10 +17,11 @@ public interface CaxyConst {
 	public static final int  CA_SERVER_PORT     = CA_PORT_BASE + 2 * CA_MAJOR_PROTO_REV;
 	public static final int  CA_REPEATER_PORT   = CA_PORT_BASE + 2 * CA_MAJOR_PROTO_REV + 1;
 
-	public static final int  DEBUG_UDP          = 1;
-	public static final int  DEBUG_TCP          = 2;
-	public static final int  DEBUG_LUP          = 4;
-	public static final int  DEBUG_NOB          = 8;
+	public static final int  DEBUG_UDP          =  1;
+	public static final int  DEBUG_TCP          =  2;
+	public static final int  DEBUG_LUP          =  4;
+	public static final int  DEBUG_NOB          =  8;
+	public static final int  DEBUG_THREAD       = 16;
 	// Debug flags >= 1<<16 are reserved for class-specific debugging
 	public static final int  DEBUG_RAWBUF       = (1<<16); /* WrapHdr     */
 	public static final int  DEBUG_PROPS        = (1<<17); /* CaxyJcaProp */

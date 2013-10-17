@@ -14,6 +14,14 @@ import java.util.Properties;
  *    the 'Context'.
  */
 class CaxyJcaProp {
+	
+		class JCAPropertyFormatException extends Exception {
+			private static final long serialVersionUID = 4237874661223209637L;
+
+			public JCAPropertyFormatException(String msg) {
+				super( msg );
+			}
+		}
 
 		protected String jcaCtxtName;
 
@@ -136,15 +144,14 @@ class CaxyJcaProp {
 			return this.getProperty( key, null );
 		}
 
-		int getJcaIntProperty(String key, int def)
+		int getJcaIntProperty(String key, int def) throws JCAPropertyFormatException
 		{
 		String str;
 			if ( (str = getJcaProperty(key)) != null ) {
 				try {
 					return Integer.parseInt(str);
 				} catch ( java.lang.NumberFormatException e ) {
-					System.err.println("Unable to parse "+key+" property");
-					System.exit(1);
+					throw new JCAPropertyFormatException("unable to parse " + key + " property into Integer" );
 				}
 			}
 			return def;

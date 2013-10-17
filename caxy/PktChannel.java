@@ -32,6 +32,12 @@ class PktOutChannel {
 		chnl  = chnl_in;
 	}
 
+	public void close()
+		throws IOException
+	{
+		chnl.close();
+	}
+
 	// I get a warning:
 	//   "Resource leak: '<unassigned Closeable value>' is never closed"
 	// However, this seems to be bogus since the channel returned by getChannel()
@@ -124,20 +130,28 @@ class PktBidChannel {
 
 	protected ByteChannel bc;
 
-	public PktBidChannel(boolean inside, int port)
+	public static ServerSocketChannel createSrvChannel(int port, int backlog)
 		throws IOException
 	{
 	ServerSocketChannel sc;
-		if ( inside ) {
-			InetSocketAddress sa = new InetSocketAddress( port );
-			sc = ServerSocketChannel.open();
-			sc.socket().bind( sa, 1 );
-			sc.socket().setReuseAddress( true );
-			bc = sc.accept();
-		} else {
-			InetSocketAddress sa = new InetSocketAddress( "localhost", port );
-			bc = ProxifiedSocketChannel.open( sa );
-		}
+		InetSocketAddress sa = new InetSocketAddress( port );
+		sc = ServerSocketChannel.open();
+		sc.socket().bind( sa, backlog );
+		sc.socket().setReuseAddress( true );
+		return sc;
+	}
+
+	public PktBidChannel(int port)
+		throws IOException
+	{
+		InetSocketAddress sa = new InetSocketAddress( "localhost", port );
+		bc = ProxifiedSocketChannel.open( sa );
+	}
+
+	public PktBidChannel(ServerSocketChannel sc)
+		throws IOException
+	{
+		bc = sc.accept();
 	}
 
 	PktInpChannel getPktInpChannel()
@@ -167,6 +181,12 @@ class PktInpChannel {
 	public PktInpChannel(ReadableByteChannel chnl_in)
 	{
 		chnl = chnl_in;
+	}
+
+	public void close() 
+		throws IOException
+	{
+		chnl.close();
 	}
 
 	// I get a warning:

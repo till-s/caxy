@@ -33,8 +33,8 @@ java -jar <path>/caxy.jar
 The commandline options are the same as for the C version
 (see caxy.html or run caxy with '-h') but only a subset is supported:
 
- -S, -f: 'server' mode and is not supported and thus -S, -f are
-         not recognized.
+ -S    : 'server' mode runs always in the foreground.
+ -f    : ignored.
 
  -n    : reverse DNS lookup of IP addresses (debugging mode) is 
          not supported. All addresses are dumped numerically. The

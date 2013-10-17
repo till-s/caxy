@@ -7,14 +7,117 @@ import java.nio.channels.DatagramChannel;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.ListIterator;
+import java.nio.channels.AsynchronousCloseException;
+
+class ClntProxyPoolShutdownException extends Exception {
+}
+
+class ClntProxyPool {
+	protected static int            debug     = 0;
+	protected static final int      MAX_CLNTS = 5;
+
+	protected PktOutChannel         pktStream;
+	protected LinkedList<ClntProxy> lru_list  = new LinkedList<ClntProxy>();
+	protected int                   num_clnts = 0;
+	protected LinkedList<ClntProxy> res_list  = new LinkedList<ClntProxy>();
+
+	protected boolean               is_dead   = false;
+
+	public static void initClass(int debug_in)
+	{
+		debug     = debug_in;
+	}
+
+	public ClntProxyPool(PktOutChannel pktStream) {
+		this.pktStream = pktStream;
+	}
+
+	public static DatagramChannel open(int port)
+		throws IOException
+	{
+	DatagramChannel udpChnl;
+
+			udpChnl = DatagramChannel.open();
+			udpChnl.socket().bind( 0 == port ? null : new InetSocketAddress( port ) );
+			udpChnl.socket().setBroadcast( true );
+			udpChnl.socket().setReuseAddress( true );
+			return udpChnl;
+	}
+
+	public static DatagramChannel open()
+		throws IOException
+	{
+		return open( CaxyConst.CA_SERVER_PORT );
+	}
+
+	public synchronized ClntProxy get(int clnt_address, int clnt_port, int port)
+		throws IOException, ClntProxyPoolShutdownException
+	{
+	ClntProxy    clnt;
+
+		if ( is_dead )
+			throw new ClntProxyPoolShutdownException();
+
+		synchronized( lru_list ) {
+			ListIterator<ClntProxy> i = lru_list.listIterator();
+			while ( i.hasNext() ) {
+				clnt = i.next();
+				if ( clnt.pxy_addr == clnt_address && clnt.pxy_port == clnt_port ) {
+					if ( 0 != i.previousIndex() ) {
+						/* bring to the front */
+						i.remove();
+						lru_list.add( clnt );
+					} else {
+						/* no need to rearrange the list */
+					}
+					return clnt;
+				}
+			}
+
+			if ( num_clnts < MAX_CLNTS ) { 
+				clnt = new ClntProxy( 0 == port ? ClntProxy.INSIDE : ClntProxy.OUTSIDE, clnt_address, clnt_port, port );
+				num_clnts++;
+			} else {
+				clnt = (ClntProxy)lru_list.removeLast();
+				clnt.setMyAddr( clnt_address, clnt_port );
+			}
+
+			lru_list.add(clnt);
+		}
+		return clnt;
+	}
+
+	public synchronized void shutdown()
+	{
+		// closing all the IO channels eventually causes all threads to die...
+		try {
+			pktStream.close();
+		} catch (IOException e) {
+		}
+		synchronized (res_list) {
+			ListIterator<ClntProxy> it = res_list.listIterator();
+			while ( it.hasNext() ) {
+				try {
+					it.next().udpChnl.close();	
+				} catch (IOException e) {
+				}
+			}
+		}
+	}
+
+	public void sendRepPortInfo(int rpeatr_port)
+		throws IOException, PktOutChannel.IncompleteBufferWrittenException
+	{
+	WrapHdr wHdr = new WrapHdr();
+		wHdr.fill( 0, CaxyConst.INADDR_ANY, CaxyConst.INADDR_ANY, 0, rpeatr_port );
+		pktStream.putPkt( wHdr, null );
+	}
 
 class ClntProxy extends Thread {
-	protected static  PktOutChannel     pktStream;
 	protected         DatagramChannel   udpChnl;
 	protected         ByteBuffer        buf;
 	protected         WrapHdr           wHdr;
 	protected         boolean           inside;
-	protected         static int        debug;
 
 	static final int  UDP_BUFSZ = 10000;
 	
@@ -29,19 +132,6 @@ class ClntProxy extends Thread {
 
 	protected         int               pxy_addr, pxy_port;
 
-	protected static final int          MAX_CLNTS = 5;
-
-	protected static int                num_clnts = 0;
-
-	protected static LinkedList<ClntProxy> list = new LinkedList<ClntProxy>();
-
-
-	public static synchronized void initClass(PktOutChannel pktStream_in, int debug_in)
-	{
-		pktStream = pktStream_in;
-		debug     = debug_in;
-	}
-
 	public void start(Class<? extends ClntProxy> c)
 	{
 		/* Start only if we are an instance of 'c'.
@@ -53,32 +143,41 @@ class ClntProxy extends Thread {
 	}
 
 	public ClntProxy(int port)
-		throws IOException
+		throws IOException, ClntProxyPoolShutdownException
 	
 	{
 		this(OUTSIDE, 0, 0, port);
 	}
 
 	protected ClntProxy(boolean inside_in, int clnt_address, int clnt_port, int udp_port)
-		throws IOException
+		throws IOException, ClntProxyPoolShutdownException
 	{
-		if ( null == pktStream ) {
-			throw new NullPointerException();
+		synchronized (ClntProxyPool.this) {
+			if ( is_dead ) {
+				throw new ClntProxyPoolShutdownException();
+			}
+			if ( null == pktStream ) {
+				throw new NullPointerException();
+			}
+			pxy_addr = clnt_address;
+			pxy_port = clnt_port;
+			buf      = ByteBuffer.allocate(UDP_BUFSZ);
+			wHdr     = new WrapHdr();
+			udpChnl  = open( udp_port );
+
+			synchronized (res_list ) {
+				res_list.add(this);
+			}
+			inside   = inside_in;
+
+			abuf     = new int[2];
+
+			start( ClntProxy.class );
 		}
-		pxy_addr = clnt_address;
-		pxy_port = clnt_port;
-		buf      = ByteBuffer.allocate(UDP_BUFSZ);
-		wHdr     = new WrapHdr();
-		udpChnl  = open( udp_port );
-		inside   = inside_in;
-
-		abuf     = new int[2];
-
-		start( ClntProxy.class );
 	}
 
 	public ClntProxy(int clnt_address, int clnt_port)
-		throws IOException
+		throws IOException, ClntProxyPoolShutdownException
 	{
 		this(INSIDE, clnt_address, clnt_port, 0);
 	}
@@ -92,7 +191,7 @@ class ClntProxy extends Thread {
 
 	boolean
 	handleUdp()
-		throws IOException, PktOutChannel.IncompleteBufferWrittenException
+		throws IOException, PktOutChannel.IncompleteBufferWrittenException, AsynchronousCloseException
 	{
 	InetSocketAddress udp_src;
 	int               skip, nCa;
@@ -178,34 +277,38 @@ class ClntProxy extends Thread {
 		return rep_seen;
 	}
 
+	public void cleanup() {
+		synchronized (lru_list) {
+			lru_list.remove( this );
+			num_clnts--;
+		}
+		synchronized (res_list) {
+			res_list.remove( this );
+			try {
+				this.udpChnl.close();
+			} catch (IOException e) {
+			}
+		}
+	}
+
 	public void run() {
+		if ( 0 != (debug & CaxyConst.DEBUG_THREAD) ) {
+			System.err.println("Client Proxy Thread Start on " + pxy_addr + ":" + pxy_port);
+		}
 		try {
 			while ( true ) {
 				handleUdp();
 			}
 		} catch (Throwable e) {
-			e.printStackTrace();
+			if ( 0 != (debug & CaxyConst.DEBUG_THREAD) ) {
+				e.printStackTrace();
+			}
 		} finally {
-			System.exit(1);
+			cleanup();
+			if ( 0 != (debug & CaxyConst.DEBUG_THREAD) ) {
+				System.err.println("Client Proxy Thread Exit on " + pxy_addr + ":" + pxy_port);
+			}
 		}
-	}
-
-	public static DatagramChannel open(int port)
-		throws IOException
-	{
-	DatagramChannel udpChnl;
-
-			udpChnl = DatagramChannel.open();
-			udpChnl.socket().bind( 0 == port ? null : new InetSocketAddress( port ) );
-			udpChnl.socket().setBroadcast( true );
-			udpChnl.socket().setReuseAddress( true );
-			return udpChnl;
-	}
-
-	public static DatagramChannel open()
-		throws IOException
-	{
-		return open( CaxyConst.CA_SERVER_PORT );
 	}
 
 	protected synchronized void setMyAddr(int clnt_address, int clnt_port)
@@ -220,37 +323,6 @@ class ClntProxy extends Thread {
 		addr_out[MYPORT_IDX] = pxy_port;
 	}
 
-	public static ClntProxy get(int clnt_address, int clnt_port, int port)
-		throws IOException
-	{
-	ClntProxy    clnt;
+}
 
-		synchronized( list ) {
-			ListIterator<ClntProxy> i = list.listIterator();
-			while ( i.hasNext() ) {
-				clnt = i.next();
-				if ( clnt.pxy_addr == clnt_address && clnt.pxy_port == clnt_port ) {
-					if ( 0 != i.previousIndex() ) {
-						/* bring to the front */
-						i.remove();
-						list.add( clnt );
-					} else {
-						/* no need to rearrange the list */
-					}
-					return clnt;
-				}
-			}
-
-			if ( num_clnts < MAX_CLNTS ) { 
-				clnt = new ClntProxy( 0 == port ? INSIDE : OUTSIDE, clnt_address, clnt_port, port );
-				num_clnts++;
-			} else {
-				clnt = (ClntProxy)list.removeLast();
-				clnt.setMyAddr( clnt_address, clnt_port );
-			}
-
-			list.add(clnt);
-		}
-		return clnt;
-	}
 }

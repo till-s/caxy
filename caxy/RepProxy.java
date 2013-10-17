@@ -2,19 +2,21 @@ package caxy;
 
 import java.net.InetSocketAddress;
 import java.io.IOException;
+import java.nio.channels.AsynchronousCloseException;
 
-class RepProxy extends ClntProxy {
+class RepProxy extends ClntProxyPool.ClntProxy {
 
 	private long        lastRepSeen = 0;
+	RepSubscriber       subscriber;
 
-	public RepProxy(int remote_rport, int rport)
-		throws IOException
+	public RepProxy(ClntProxyPool pool, int remote_rport, int rport)
+		throws IOException, ClntProxyPoolShutdownException
 	{
-		super(INSIDE, CaxyConst.INADDR_LOOPBACK, remote_rport, 0);
+		pool.super(INSIDE, CaxyConst.INADDR_LOOPBACK, remote_rport, 0);
 
 		start( RepProxy.class );
 
-		new RepSubscriber( rport );
+		subscriber = new RepSubscriber( rport );
 	}
 
 	public synchronized long lastRepSeenMs()
@@ -32,7 +34,16 @@ class RepProxy extends ClntProxy {
 		lastRepSeen = System.currentTimeMillis();
 	}
 
+	public void cleanup()
+	{
+		super.cleanup();
+		subscriber.interrupt();
+	}
+
 	public void run() {
+		if ( 0 != (ClntProxyPool.debug & CaxyConst.DEBUG_THREAD) ) {
+			System.err.println("Repeater Proxy Thread Start");
+		}
 		try {
 			boolean rep_seen;
 			while ( true ) {
@@ -42,9 +53,14 @@ class RepProxy extends ClntProxy {
 				}
 			}
 		} catch (Throwable e) {
-			e.printStackTrace(System.err);
+			if ( 0 != (ClntProxyPool.debug & CaxyConst.DEBUG_THREAD) ) {
+				e.printStackTrace(System.err);
+			}
 		} finally {
-			System.exit(1);
+			cleanup();
+			if ( 0 != (ClntProxyPool.debug & CaxyConst.DEBUG_THREAD) ) {
+				System.err.println("Repeater Proxy Thread Exit");
+			}
 		}
 	}
 
@@ -66,21 +82,30 @@ class RepProxy extends ClntProxy {
 
 		public void run()
 		{
-			while ( true ) {
-				try {
+		final boolean dbg = ( 0 != (ClntProxyPool.debug & CaxyConst.DEBUG_THREAD) );
+
+			if ( dbg ) {
+				System.err.println("Repeater Subscriber Thread Start");
+			}
+			try {
+				while ( ! interrupted() ) {
 					subscriptionMsg.out( udpChnl, subscriptionDst );
-				} catch ( IOException e ) {
-					System.err.println("repSubscriber incurred IOException (terminating): " + e);
-					break;
+					try {
+						sleep( sinceLastRepSeenMs() < 130000L ? 120000L : 10000L );
+					} catch ( java.lang.InterruptedException e ) {
+						if ( dbg )
+							System.err.println("repSubscriber was interrupted (terminating): " + e );
+						break;
+					}
 				}
-				try {
-					sleep( sinceLastRepSeenMs() < 130000L ? 120000L : 10000L );
-				} catch ( java.lang.InterruptedException e ) {
-					System.err.println("repSubscriber was interrupted (terminating): " + e );
-					break;
+			} catch (Throwable t) { 
+				if ( dbg )
+					System.err.println("repSubscriber terminating: " + t);
+			} finally {
+				if ( dbg ) {
+					System.err.println("Repeater Subscriber Thread Exit");
 				}
 			}
-			System.exit(1);
 		}
 	}
 }

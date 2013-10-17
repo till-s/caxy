@@ -6,6 +6,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.nio.channels.Channels;
+import java.nio.channels.ServerSocketChannel;
 import java.util.LinkedList;
 import java.util.ListIterator;
 
@@ -113,18 +114,19 @@ public static void main(String [] args)
 	int                   server_port;
 	int                   rpeatr_port;
 	int                   debug  = 0;
-	WrapHdr               wHdr   = new WrapHdr();
 	Getopt                g;
 	int                   opt;
 	boolean               inside = false;
+	boolean               server = false;
 	LinkedList<String>    alist  = new LinkedList<String>();
 	CaxyJcaProp           props  = null;
 	String                jcaPre = null;
 	String                str;
 	boolean               use_env, auto_alist = true, auto_alist_set = false;
+	ServerSocketChannel   srvChn = null;
 
 		
-		g = new Getopt(name, args, "a:A:d:hIJ:p:P:V");
+		g = new Getopt(name, args, "a:A:d:hIJ:p:P:VSf");
 		
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
@@ -175,10 +177,24 @@ public static void main(String [] args)
 					System.exit(0);
 				break;
 
+				case 'f':
+					// ignored; server always runs in the foreground
+				break;
+
+				case 'S':
+					server = true;
+					inside = true;
+				break;
+
 				default:
 					System.err.println("Unknown option '" + (char)opt + "': ignoring");
 				break;
 			}
+		}
+
+		if ( 0 == tunnel_port && server ) {
+			System.err.println("Cannot work over STDIO in server mode; use -p to give me a port");
+			System.exit(1);
 		}
 
 		try {
@@ -212,8 +228,9 @@ public static void main(String [] args)
 				}
 			}
 		} else {
-			server_port = props.getJcaIntProperty( "server_port",   CaxyConst.CA_SERVER_PORT );
-			rpeatr_port = props.getJcaIntProperty( "repeater_port", CaxyConst.CA_REPEATER_PORT );
+			server_port = getIntProp( props, "server_port",   CaxyConst.CA_SERVER_PORT );
+			rpeatr_port = getIntProp( props, "repeater_port", CaxyConst.CA_REPEATER_PORT );
+
 			if ( inside ) {
 				env_addrlst = props.getJcaProperty( "addr_list" );
 				if ( ! auto_alist_set ) { /* not enforced by commandline option */
@@ -225,114 +242,124 @@ public static void main(String [] args)
 
 		props = null;
 
-		if ( 0 == tunnel_port ) {
-			int l = args.length - g.getOptind(), i, j;
-			if ( l > 0 && ! inside ) {
-				Process   p;
-				String [] cmd_args = new String[l];
-		
-				j = g.getOptind();
-				for ( i=0; i<l; i++ )
-					cmd_args[i] = args[j + i];
+		TunnelHandlerEnv tunEnv = new TunnelHandlerEnv(inside, server_port, rpeatr_port, debug);
 
-				p       = Runtime.getRuntime().exec(cmd_args);
-				outStrm = new PktOutStrmChannel( p.getOutputStream() );
-				inpStrm = new PktInpChannel(Channels.newChannel(p.getInputStream()));
-				new Errlog(p.getErrorStream());
-			} else {
-				outStrm = PktOutChannel.getStdout();
-				inpStrm = PktInpChannel.getStdin();
+		if ( inside ) {
+			ListIterator<String> i;
+			if ( null != env_addrlst ) {
+				alist.add( env_addrlst );
+				env_addrlst           = null;
+			}
+
+			for ( i = alist.listIterator(); i.hasNext(); ) {
+				tunEnv.addDstAddresses( i.next(), server_port );
+			}
+
+			if ( auto_alist ) {
+				try {
+					Class<?> autoAddrCls  = Class.forName("caxy.AutoAddr");
+					Method   getBcstAddrs = autoAddrCls.getMethod("getList", new Class[] { Boolean.TYPE });
+					tunEnv.addDstAddresses( 
+							(InetAddress[])getBcstAddrs.invoke( null, new Object[] {  0 != (debug & CaxyConst.DEBUG_ALIST) } ),
+							server_port );
+
+				} catch (ClassNotFoundException e) {
+					System.err.println("Unable to assemble CA auto address list: not supported under Java < 1.6 !");
+				} catch (Throwable e) {
+					System.err.println("Unable to assemble CA auto address list: ");
+					System.err.println( e );
+					e.printStackTrace();
+					System.exit(1);
+				}
+			}
+				
+			if ( tunEnv.getLength() == 0 ) {
+				System.err.format("Error: NO CA ADDRESS LIST in -I mode\n\n");
+				System.err.format("Must set %s or use '-a' (using %s)\n\n",
+				                  use_env ? "'EPICS_CA_ADDR_LIST' env-var" : "'gov.aps.jca.Context.addr_list' property",
+				                  use_env ? "ENVIRONMENT" : "PROPERTIES");
+
+				System.err.println("To use environment variables, make sure 'jca.use_env' property");
+				System.err.println("is either true or undefined.");
+				System.err.println();
+				System.err.println("To use properties, the 'jca.use_env' property must be set to 'false'.");
+				System.err.println();
+
+				System.err.format("Use -d 0x%x to track property-related problems\n", CaxyConst.DEBUG_PROPS);
+				System.exit(1);
+			}
+
+			if ( 0 != (debug & CaxyConst.DEBUG_ALIST) ) {
+				tunEnv.dumpDstAddresses();
 			}
 		} else {
-			try {
-				PktBidChannel bid = new PktBidChannel(inside, tunnel_port);
-				inpStrm = bid.getPktInpChannel();
-				outStrm = bid.getPktOutChannel();
-			} catch (IOException e) {
-				System.err.println("Unable to create TCP channel (on port " + tunnel_port + "): " + e);
-				throw(e);
-			}
+			tunEnv.addDstAddress("0.0.0.0",0);
 		}
 
-		ClntProxy.initClass( outStrm, debug );
+		alist = null;
+
+		ClntProxyPool.initClass( debug );
 
 		try {
 
-			tunlHdlr = new TunnelHandler( inpStrm );
+			do {
 
-			if ( inside ) {
-				ListIterator<String> i;
-				if ( null != env_addrlst ) {
-					alist.add( env_addrlst );
-					env_addrlst           = null;
-				}
+				if ( 0 == tunnel_port ) {
+					int l = args.length - g.getOptind(), i, j;
+					if ( l > 0 && ! inside ) {
+						Process   p;
+						String [] cmd_args = new String[l];
 
-				for ( i = alist.listIterator(); i.hasNext(); ) {
-					tunlHdlr.addDstAddresses( i.next(), server_port );
-				}
+						j = g.getOptind();
+						for ( i=0; i<l; i++ )
+							cmd_args[i] = args[j + i];
 
-				if ( auto_alist ) {
-					try {
-						Class<?> autoAddrCls  = Class.forName("caxy.AutoAddr");
-						Method   getBcstAddrs = autoAddrCls.getMethod("getList", new Class[] { Boolean.TYPE });
-						tunlHdlr.addDstAddresses( 
-								(InetAddress[])getBcstAddrs.invoke( null, new Object[] {  0 != (debug & CaxyConst.DEBUG_ALIST) } ),
-								server_port );
-
-					} catch (ClassNotFoundException e) {
-						System.err.println("Unable to assemble CA auto address list: not supported under Java < 1.6 !");
-					} catch (Throwable e) {
-						System.err.println("Unable to assemble CA auto address list: ");
-						System.err.println( e );
-						e.printStackTrace();
-						System.exit(1);
+						p       = Runtime.getRuntime().exec(cmd_args);
+						outStrm = new PktOutStrmChannel( p.getOutputStream() );
+						inpStrm = new PktInpChannel(Channels.newChannel(p.getInputStream()));
+						new Errlog(p.getErrorStream());
+					} else {
+						outStrm = PktOutChannel.getStdout();
+						inpStrm = PktInpChannel.getStdin();
 					}
+				} else {
+					PktBidChannel bid;
+					try {
+						if ( inside ) {
+							if ( null == srvChn ) {
+								srvChn = PktBidChannel.createSrvChannel( tunnel_port, 2 );
+							}
+							bid = new PktBidChannel( srvChn );
+							if ( ! server ) {
+								srvChn.close();
+								srvChn = null;
+							}
+						} else {
+							bid = new PktBidChannel( tunnel_port );
+						}
+					} catch (IOException e) {
+						System.err.println("Unable to create TCP channel (on port " + tunnel_port + "): " + e);
+						throw(e);
+					}
+					outStrm = bid.getPktOutChannel();
+					inpStrm = bid.getPktInpChannel();
 				}
-				
-				if ( tunlHdlr.udp_dst.length == 0 ) {
-					System.err.format("Error: NO CA ADDRESS LIST in -I mode\n\n");
-					System.err.format("Must set %s or use '-a' (using %s)\n\n",
-					                  use_env ? "'EPICS_CA_ADDR_LIST' env-var" : "'gov.aps.jca.Context.addr_list' property",
-					                  use_env ? "ENVIRONMENT" : "PROPERTIES");
 
-					System.err.println("To use environment variables, make sure 'jca.use_env' property");
-					System.err.println("is either true or undefined.");
-					System.err.println();
-					System.err.println("To use properties, the 'jca.use_env' property must be set to 'false'.");
-					System.err.println();
+				ClntProxyPool pool = new ClntProxyPool( outStrm );
 
-					System.err.format("Use -d 0x%x to track property-related problems\n", CaxyConst.DEBUG_PROPS);
-					System.exit(1);
+				tunlHdlr = new TunnelHandler(pool, inpStrm, tunEnv);
+
+				if ( server ) {
+					(new Thread(tunlHdlr)).start();
+				} else {
+					tunlHdlr.execute();
 				}
 
-				if ( 0 != (debug & CaxyConst.DEBUG_ALIST) ) {
-					tunlHdlr.dumpDstAddresses();
-				}
+			} while ( server );
 
-				/* read an initial packet which tells us what repeater port the 'outside' is using */
-				wHdr.read( inpStrm );
-				
-				new RepProxy( wHdr.get_cport(), rpeatr_port);
+			if ( null != srvChn )
+				srvChn.close();
 
-				System.err.println("CAXY -- tunnel now established");
-
-			} else {
-
-				tunlHdlr.addDstAddress("0.0.0.0",0);
-
-				/* Send initial packet (OUTSIDE only) */
-				wHdr.fill( 0, CaxyConst.INADDR_ANY, CaxyConst.INADDR_ANY, 0, CaxyConst.CA_REPEATER_PORT );
-				outStrm.putPkt( wHdr, null );
-	
-				ClntProxy.get( CaxyConst.INADDR_ANY, 0, server_port );
-			}
-
-			wHdr  = null;
-			alist = null;
-
-			while ( true ) {
-				tunlHdlr.handleStream(inside, debug);
-			}
 		} catch (IOException e) {
 			e.printStackTrace(System.err);
 			System.err.println("Broken connection?");
@@ -352,13 +379,22 @@ public static void main(String [] args)
 	static void usage(String nm)
 	{
 
-	System.err.format( "Usage: %s [-h] [-I -a addr_list] [-d debug_flags] [-p tunnel_port] [-J prefix] [ [--] cmd [ args ] ]\n\n", nm);
+	System.err.format( "Usage: %s [-h] [-S -I -a addr_list] [-d debug_flags] [-p tunnel_port] [-J prefix] [ [--] cmd [ args ] ]\n\n", nm);
 
 	System.err.format( "  OPTIONS:\n\n");
 
     System.err.format( "       -I             Run in 'inside' mode as a proxy for CA clients\n");
     System.err.format( "                      on the 'outside'.\n\n");
 
+	System.err.format( "       -S             'server-mode'. Like '-I' but manage/accept multiple connections\n");
+	System.err.format( "                      from multiple 'outside' clients. The main program remains\n");
+	System.err.format( "                      running in the foreground. Useful also if the 'outside' client\n");
+	System.err.format( "                      dies and is restarted; no restart of the 'inside' is necessary\n");
+	System.err.format( "                      in this mode. REQUIRES -p, i.e., a server cannot use STDIO for\n");
+	System.err.format( "                      tunnel traffic.\n\n");
+
+	System.err.format( "       -f             ignored for compatibility with C version. Note that -S always\n");
+	System.err.format( "                      executes in the foreground.\n\n");
 
     System.err.format( "       -p tunnel_port TCP port to use for the tunnel (defaults to: %d).\n", TunnelHandler.TUNNEL_PORT_DFLT);
 	System.err.format( "                      This flag is available on both, the 'inside' and the 'outside'.\n");
@@ -471,7 +507,7 @@ public static void main(String [] args)
 	System.err.format( "                      The default value for the repeater port is %d.\n\n", CaxyConst.CA_REPEATER_PORT);
 
 	System.err.format( "                      NOTE: it is perfectly possible to use different settings\n");
-	System.err.format( "                      for EPICS_CA_SERVER_PORT on the inside and outside.\n\n");
+	System.err.format( "                      for EPICS_CA_REPEATER_PORT on the inside and outside.\n\n");
 
     System.err.format( "       EPICS_CA_ADDR_LIST (unused in 'outside' mode)\n");
     System.err.format( "                      White-space separated list of <address>[:<port>] items defining\n");
@@ -502,6 +538,17 @@ public static void main(String [] args)
 				System.err.println("Unable to parse "+env_var+" env-var");
 				System.exit(1);
 			}
+		}
+		return defltVal;
+	}
+
+	public static int getIntProp(CaxyJcaProp props, String key, int defltVal)
+	{
+		try {
+			return props.getJcaIntProperty(key, defltVal);
+		} catch ( CaxyJcaProp.JCAPropertyFormatException e ) {
+			e.printStackTrace();
+			System.exit( 1 );
 		}
 		return defltVal;
 	}
