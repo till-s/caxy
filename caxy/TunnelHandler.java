@@ -6,145 +6,6 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.StringTokenizer;
 
-class TunnelHandlerEnv {
-	final boolean inside;
-	final int     server_port;
-	final int     repeater_port;
-	final int     debug;
-
-	private InetSocketAddress udp_dst[] = new InetSocketAddress[0];
-
-	TunnelHandlerEnv(boolean inside, int server_port, int repeater_port, int debug)
-	{
-		this.inside        = inside;
-		this.server_port   = server_port;
-		this.repeater_port = repeater_port;
-		this.debug         = debug;
-	}
-
-	/* extend array by 'n' slots; not synchronized because caller is */
-	protected int arrext(int n)
-	{
-	int i;
-	InetSocketAddress [] oa = udp_dst;
-	int rval                = udp_dst.length;
-
-		udp_dst = new InetSocketAddress[rval + n];
-		/* Avoid Arrays.copyOf - not in java 1.4 */
-		for ( i=0; i<oa.length; i++ ) {
-			udp_dst[i] = oa[i];
-		}
-		return rval;
-	}
-
-	/* Not efficient but only done once, during initialization */
-	protected boolean present(InetSocketAddress sa)
-	{
-	int i;
-		if ( null == sa )
-			return true;
-
-		for ( i=0; i<udp_dst.length; i++ ) {
-			if ( udp_dst[i].equals( sa ) )
-				return true;
-		}
-		return false;
-	}
-
-	public synchronized void addDstAddress(InetSocketAddress sa)
-	{
-		/* Only add if not there already */
-		if ( ! present( sa ) ) {
-		int idx = arrext(1);
-			udp_dst[idx] = sa;
-		}
-	}
-
-	public synchronized void addDstAddresses(InetAddress []sa, int port)
-	{
-	int l;
-	int idx;
-	int i,nl;
-	InetSocketAddress []buf;
-
-		if ( null == sa )
-			return;
-
-		l   = sa.length;
-		buf = new InetSocketAddress[l];
-
-		for ( i=0, nl=l; i<l; i++ ) {
-			if ( (present( buf[i] = new InetSocketAddress( sa[i], port ) )) ) {
-				buf[i] = null;
-				nl--;
-			}
-		}
-
-		idx = arrext(nl);
-
-		for ( i = 0, nl=0; i < l; i++ ) {
-			if ( null != buf[i] ) {
-				udp_dst[idx + nl++] = buf[i];
-			}
-		}
-	}
-
-	public static InetSocketAddress cvtAddress(String s, int port)
-		throws java.lang.NumberFormatException
-	{
-	StringTokenizer   st = new StringTokenizer(s,":");
-	InetSocketAddress sa;
-		if ( st.countTokens() > 0 ) {
-			String host = st.nextToken();
-			if ( st.hasMoreTokens() ) {
-				port = Integer.decode( st.nextToken() ).intValue();
-			}
-			sa = new InetSocketAddress(host, port);
-			if ( sa.isUnresolved() ) {
-				System.err.println("Ignoring unresolved address: "+host+":"+port);
-			} else {
-				return sa;
-			}
-		}
-		return null;
-	}
-
-	public void addDstAddress(String s, int port)
-		throws java.lang.NumberFormatException
-	{
-	InetSocketAddress sa = cvtAddress(s, port);
-		if ( null != sa )
-			addDstAddress( sa );
-	}
-
-	public void addDstAddresses(String addresses, int defaultPort)
-		throws java.lang.NumberFormatException
-	{
-	StringTokenizer     st = new StringTokenizer(addresses);
-		while ( st.hasMoreTokens() ) {
-			addDstAddress( st.nextToken(), defaultPort );
-		}
-	}
-
-	public synchronized void dumpDstAddresses()
-	{
-	int i;
-		System.err.println("CA Address list:");
-		for ( i=0; i<udp_dst.length; i++ ) {
-			System.err.println("  "+udp_dst[i]);
-		}
-	}
-
-	public synchronized InetSocketAddress [] get()
-	{
-		return udp_dst.clone();
-	}
-
-	public synchronized int getLength()
-	{
-		return udp_dst.length;
-	}
-}
 
 class TunnelHandler implements Runnable {
 
@@ -156,7 +17,7 @@ class TunnelHandler implements Runnable {
 
 	INSACache         insaCache;
 
-	TunnelHandlerEnv  env;
+	Env               env;
 
 	static final int  TCP_BUFSZ = 10000;
 
@@ -218,7 +79,7 @@ class TunnelHandler implements Runnable {
 		}
 	}
 
-	protected TunnelHandler(ClntProxyPool proxyPool_in, PktInpChannel pktStream_in, TunnelHandlerEnv env_in)
+	protected TunnelHandler(ClntProxyPool proxyPool_in, PktInpChannel pktStream_in, Env env_in)
 	{
 		env       = env_in;
 		udp_dst   = env.get();
@@ -356,4 +217,145 @@ class TunnelHandler implements Runnable {
 			}
 		}
 	}
+	
+	public static class Env {
+		final boolean inside;
+		final int     server_port;
+		final int     repeater_port;
+		final int     debug;
+
+		private InetSocketAddress udp_dst[] = new InetSocketAddress[0];
+
+		public Env(boolean inside, int server_port, int repeater_port, int debug)
+		{
+			this.inside        = inside;
+			this.server_port   = server_port;
+			this.repeater_port = repeater_port;
+			this.debug         = debug;
+		}
+
+		/* extend array by 'n' slots; not synchronized because caller is */
+		protected int arrext(int n)
+		{
+		int i;
+		InetSocketAddress [] oa = udp_dst;
+		int rval                = udp_dst.length;
+
+			udp_dst = new InetSocketAddress[rval + n];
+			/* Avoid Arrays.copyOf - not in java 1.4 */
+			for ( i=0; i<oa.length; i++ ) {
+				udp_dst[i] = oa[i];
+			}
+			return rval;
+		}
+
+		/* Not efficient but only done once, during initialization */
+		protected boolean present(InetSocketAddress sa)
+		{
+		int i;
+			if ( null == sa )
+				return true;
+
+			for ( i=0; i<udp_dst.length; i++ ) {
+				if ( udp_dst[i].equals( sa ) )
+					return true;
+			}
+			return false;
+		}
+
+		public synchronized void addDstAddress(InetSocketAddress sa)
+		{
+			/* Only add if not there already */
+			if ( ! present( sa ) ) {
+			int idx = arrext(1);
+				udp_dst[idx] = sa;
+			}
+		}
+
+		public synchronized void addDstAddresses(InetAddress []sa, int port)
+		{
+		int l;
+		int idx;
+		int i,nl;
+		InetSocketAddress []buf;
+
+			if ( null == sa )
+				return;
+
+			l   = sa.length;
+			buf = new InetSocketAddress[l];
+
+			for ( i=0, nl=l; i<l; i++ ) {
+				if ( (present( buf[i] = new InetSocketAddress( sa[i], port ) )) ) {
+					buf[i] = null;
+					nl--;
+				}
+			}
+
+			idx = arrext(nl);
+
+			for ( i = 0, nl=0; i < l; i++ ) {
+				if ( null != buf[i] ) {
+					udp_dst[idx + nl++] = buf[i];
+				}
+			}
+		}
+
+		public static InetSocketAddress cvtAddress(String s, int port)
+			throws java.lang.NumberFormatException
+		{
+		StringTokenizer   st = new StringTokenizer(s,":");
+		InetSocketAddress sa;
+			if ( st.countTokens() > 0 ) {
+				String host = st.nextToken();
+				if ( st.hasMoreTokens() ) {
+					port = Integer.decode( st.nextToken() ).intValue();
+				}
+				sa = new InetSocketAddress(host, port);
+				if ( sa.isUnresolved() ) {
+					System.err.println("Ignoring unresolved address: "+host+":"+port);
+				} else {
+					return sa;
+				}
+			}
+			return null;
+		}
+
+		public void addDstAddress(String s, int port)
+			throws java.lang.NumberFormatException
+		{
+		InetSocketAddress sa = cvtAddress(s, port);
+			if ( null != sa )
+				addDstAddress( sa );
+		}
+
+		public void addDstAddresses(String addresses, int defaultPort)
+			throws java.lang.NumberFormatException
+		{
+		StringTokenizer     st = new StringTokenizer(addresses);
+			while ( st.hasMoreTokens() ) {
+				addDstAddress( st.nextToken(), defaultPort );
+			}
+		}
+
+		public synchronized void dumpDstAddresses()
+		{
+		int i;
+			System.err.println("CA Address list:");
+			for ( i=0; i<udp_dst.length; i++ ) {
+				System.err.println("  "+udp_dst[i]);
+			}
+		}
+
+		public synchronized InetSocketAddress [] get()
+		{
+			return udp_dst.clone();
+		}
+
+		public synchronized int getLength()
+		{
+			return udp_dst.length;
+		}
+	}
+
 }

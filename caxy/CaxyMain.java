@@ -246,7 +246,7 @@ public static void main(String [] args)
 
 		props = null;
 
-		TunnelHandlerEnv tunEnv = new TunnelHandlerEnv(inside, server_port, rpeatr_port, debug);
+		TunnelHandler.Env tunEnv = new TunnelHandler.Env(inside, server_port, rpeatr_port, debug);
 
 		if ( inside ) {
 			ListIterator<String> i;
