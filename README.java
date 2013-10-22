@@ -43,6 +43,12 @@ The commandline options are mostly the same as for the C version
  -v    : the java version only supports CATUN protocol version 3.
          There is no option to select the protocol version.
 
+ -P    : when using a dedicated tunnel port (as opposed to STDIO)
+         in 'inside' mode then bind to 'ANY' address. This
+         means that connections from anywhere are possible. By default
+         caxy binds to a local address so that only connections from
+         the machine where caxy is running are possible.
+
 BUILDING java caxy
 ------------------
 

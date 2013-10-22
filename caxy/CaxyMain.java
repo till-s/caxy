@@ -123,9 +123,10 @@ public static void main(String [] args)
 	String                str;
 	boolean               use_env, auto_alist = true, auto_alist_set = false;
 	ServerSocketChannel   srvChn = null;
+	boolean               local  = true;
 
 		
-		g = new Getopt(name, args, "a:A:d:hIJ:p:P:VSf");
+		g = new Getopt(name, args, "a:A:d:hIJ:p:PVSf");
 		
 		while ( (opt = g.getopt()) > 0 ) {
 			switch ( opt ) {
@@ -150,6 +151,10 @@ public static void main(String [] args)
 				case 'h':
 					usage(name);
 					System.exit(0);
+				break;
+
+				case 'P':
+					local = false;
 				break;
 
 				case 'p':
@@ -324,7 +329,7 @@ public static void main(String [] args)
 					try {
 						if ( inside ) {
 							if ( null == srvChn ) {
-								srvChn = PktBidChannel.createSrvChannel( tunnel_port, 2 );
+								srvChn = PktBidChannel.createSrvChannel( local, tunnel_port, 2 );
 							}
 							bid = new PktBidChannel( srvChn );
 							if ( ! server ) {
@@ -376,7 +381,7 @@ public static void main(String [] args)
 	static void usage(String nm)
 	{
 
-	System.err.format( "Usage: %s [-h] [-S -I -a addr_list] [-d debug_flags] [-p tunnel_port] [-J prefix] [ [--] cmd [ args ] ]\n\n", nm);
+	System.err.format( "Usage: %s [-h] [-S -I -P -a addr_list] [-d debug_flags] [-p tunnel_port] [-J prefix] [ [--] cmd [ args ] ]\n\n", nm);
 
 	System.err.format( "  OPTIONS:\n\n");
 
@@ -409,6 +414,10 @@ public static void main(String [] args)
 	System.err.format( "                            %s will use STDIO for tunnel traffic. You may want to use\n", nm);
 	System.err.format( "                            the '-- cmd [args]' feature (see below) to set up a tunnel\n");
 	System.err.format( "                            over SSH's stdio.\n\n");
+
+	System.err.format( "       -P             Accept connections from anywhere (only relevant on 'inside' and when not\n");
+	System.err.format( "                      using STDIO for tunnel traffic; see -p, -S). By default only connections\n");
+	System.err.format( "                      from the machine where %s is running are accepted.\n\n", nm);
 
     System.err.format( "       -a addr_list   White-space separated list of 'addr[:port]' items. This option\n");
     System.err.format( "                      has the same effect as (and is augmented by) the env-var\n");
