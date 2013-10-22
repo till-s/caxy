@@ -10,9 +10,11 @@ import java.util.ListIterator;
 import java.nio.channels.AsynchronousCloseException;
 
 class ClntProxyPoolShutdownException extends Exception {
+	private static final long serialVersionUID = 5722414473852515796L;
 }
 
-class ClntProxyPool {
+public class ClntProxyPool {
+
 	protected static int            debug     = 0;
 	protected static final int      MAX_CLNTS = 5;
 
