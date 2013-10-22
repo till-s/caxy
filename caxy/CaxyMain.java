@@ -340,7 +340,7 @@ public static void main(String [] args)
 							bid = new PktBidChannel( tunnel_port );
 						}
 					} catch (IOException e) {
-						System.err.println("Unable to create TCP channel (on port " + tunnel_port + "): " + e);
+						System.err.println("Unable to create TCP channel (on port " + tunnel_port + "): " + e.getMessage());
 						throw(e);
 					}
 					outStrm = bid.getPktOutChannel();
