@@ -7,7 +7,7 @@ import java.nio.ByteBuffer;
 import java.util.StringTokenizer;
 
 
-class TunnelHandler implements Runnable {
+public class TunnelHandler implements Runnable {
 	
 	public interface OnTunnelStateChangeListener {
 		public void onTunnelStateChange(boolean up);
@@ -89,7 +89,7 @@ class TunnelHandler implements Runnable {
 		}
 	}
 
-	protected TunnelHandler(ClntProxyPool proxyPool_in, PktInpChannel pktStream_in, Env env_in)
+	public TunnelHandler(ClntProxyPool proxyPool_in, PktInpChannel pktStream_in, Env env_in)
 	{
 		env       = env_in;
 		udp_dst   = env.get();
