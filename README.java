@@ -30,8 +30,8 @@ caxTo run java caxy you need jvm >= 1.6 and you start it
 
 java -jar <path>/caxy.jar
 
-The commandline options are the same as for the C version
-(see caxy.html or run caxy with '-h') but only a subset is supported:
+The commandline options are mostly the same as for the C version
+(see caxy.html or run caxy with '-h') with the following exceptions:
 
  -S    : 'server' mode runs always in the foreground.
  -f    : ignored.

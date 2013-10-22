@@ -102,7 +102,6 @@ class CaxyMain {
 
 public static final String name = "caxyj";
 
-
 public static void main(String [] args)
 		throws FileNotFoundException, IOException
 	{
@@ -301,9 +300,7 @@ public static void main(String [] args)
 		ClntProxyPool.initClass( debug );
 
 		try {
-
 			do {
-
 				if ( 0 == tunnel_port ) {
 					int l = args.length - g.getOptind(), i, j;
 					if ( l > 0 && ! inside ) {
@@ -406,9 +403,8 @@ public static void main(String [] args)
 	System.err.format( "                      and on the inside\n\n");
 	System.err.format( "                         %s -I -p <ins_port>\n\n", nm);
 	System.err.format( "                      OTOH, if you 'proxify' the tunnel also via ssh's -D\n");
-	System.err.format( "                      option (CAVEAT: this doesn't seem to work with 'tsocks'\n");
-	System.err.format( "                      but it does with 'dante') then the 'tunnel_port' on either\n");
-	System.err.format( "                      side must be the same.\n\n");
+	System.err.format( "                      option then the 'tunnel_port' on either side must be the same.\n\n");
+
 	System.err.format( "                      NOTE: you may say '-p0' (a zero port number) in which case\n");
 	System.err.format( "                            %s will use STDIO for tunnel traffic. You may want to use\n", nm);
 	System.err.format( "                            the '-- cmd [args]' feature (see below) to set up a tunnel\n");
