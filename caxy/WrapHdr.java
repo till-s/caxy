@@ -26,7 +26,7 @@ class WrapHdr {
 	public ByteBuffer fill(int n_ca, int saddr, int caddr, int sport, int cport)
 	{
 		b.clear();
-		b.put((byte)CaxyConst.CATUN_VERSION_2);
+		b.put((byte)CaxyConst.CATUN_VERSION_3);
 		b.position(WRAP_N_CA_OFF);
 		b.putShort((short)(n_ca & 0xffff));
 		b.putInt(saddr);
@@ -54,7 +54,7 @@ class WrapHdr {
 		b.flip();
 
 		version = b.get();
-		if ( CaxyConst.CATUN_VERSION_2 != (CaxyConst.CATUN_MAJOR_MSK & version) )
+		if ( CaxyConst.CATUN_VERSION_3 != (CaxyConst.CATUN_MAJOR_MSK & version) )
 			throw new CaxyBadVersionException(version);
 	}
 

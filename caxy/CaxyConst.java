@@ -1,8 +1,10 @@
 package caxy;
 
 public interface CaxyConst {
-	public static final int  CATUN_VERSION_1    = 0x10;
-	public static final int  CATUN_VERSION_2    = 0x20;
+//	public static final int  CATUN_VERSION_1    = 0x10;
+//	public static final int  CATUN_VERSION_2    = 0x20;
+	public static final int  CATUN_VERSION_3    = 0x30;
+
 	public static final int  CATUN_MAJOR_MSK    = 0xf0;
 
 	public static final int  CA_PORT_BASE       = 5056;

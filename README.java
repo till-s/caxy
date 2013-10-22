@@ -40,7 +40,7 @@ The commandline options are mostly the same as for the C version
          not supported. All addresses are dumped numerically. The
          -n option is not recognized.
 
- -v    : the java version only supports CATUN protocol version 2.
+ -v    : the java version only supports CATUN protocol version 3.
          There is no option to select the protocol version.
 
 BUILDING java caxy

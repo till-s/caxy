@@ -305,21 +305,27 @@ class TunnelHandler implements Runnable {
 			   ClntProxyPoolShutdownException
 	{
 		try {
+			WrapHdr wHdr = new WrapHdr();
 			if ( env.inside ) {
-				WrapHdr wHdr = new WrapHdr();
-				/* read an initial packet which tells us what repeater port the 'outside' is using */
+				// read an initial packet which tells us what repeater port the 'outside' is using 
 				wHdr.read( pktStream );
-
+				
+				// send empty header to let them know we're ready...
+				proxyPool.sendRepPortInfo( 0 );
+				
 				new RepProxy(proxyPool, wHdr.get_cport(), env.repeater_port);
-				wHdr  = null;
 
 				System.err.println("CAXY -- tunnel now established");
 			} else {
 				/* Send initial packet (OUTSIDE only) */
 				proxyPool.sendRepPortInfo( env.repeater_port );
+				
+				// wait for answer (empty WrapHdr) from the inside
+				wHdr.read( pktStream );
 
 				proxyPool.get( CaxyConst.INADDR_ANY, 0, env.server_port );
 			}
+			wHdr  = null;
 
 			while ( true ) {
 				handleStream();
