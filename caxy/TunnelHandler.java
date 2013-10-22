@@ -209,8 +209,6 @@ public class TunnelHandler implements Runnable {
 				handleStream();
 			}
 
-		} catch (Throwable t) {
-			throw t;
 		} finally {
 			shutdown();
 		}
