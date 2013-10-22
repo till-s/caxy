@@ -1,8 +1,7 @@
 package caxy;
 
-import java.net.InetSocketAddress;
 import java.io.IOException;
-import java.nio.channels.AsynchronousCloseException;
+import java.net.InetSocketAddress;
 
 class RepProxy extends ClntProxyPool.ClntProxy {
 
