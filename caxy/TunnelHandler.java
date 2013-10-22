@@ -8,6 +8,10 @@ import java.util.StringTokenizer;
 
 
 class TunnelHandler implements Runnable {
+	
+	public interface OnTunnelStateChangeListener {
+		public void onTunnelStateChange(boolean up);
+	}
 
 	PktInpChannel     pktStream;
 	WrapHdr           wHdr;
@@ -18,6 +22,12 @@ class TunnelHandler implements Runnable {
 	INSACache         insaCache;
 
 	Env               env;
+	
+	volatile OnTunnelStateChangeListener onStateChange = null;
+	
+	public void setOnTunnelStateChangeListener(OnTunnelStateChangeListener l) {
+			onStateChange = l;
+	}
 
 	static final int  TCP_BUFSZ = 10000;
 
@@ -158,6 +168,10 @@ class TunnelHandler implements Runnable {
 		} catch (IOException e) {
 		}
 		proxyPool.shutdown();
+		
+		OnTunnelStateChangeListener l = onStateChange;
+		if ( null != l)
+			l.onTunnelStateChange( false );
 	}
 
 	public void execute()
@@ -175,8 +189,6 @@ class TunnelHandler implements Runnable {
 				proxyPool.sendRepPortInfo( 0 );
 				
 				new RepProxy(proxyPool, wHdr.get_cport(), env.repeater_port);
-
-				System.err.println("CAXY -- tunnel now established");
 			} else {
 				/* Send initial packet (OUTSIDE only) */
 				proxyPool.sendRepPortInfo( env.repeater_port );
@@ -187,6 +199,11 @@ class TunnelHandler implements Runnable {
 				proxyPool.get( CaxyConst.INADDR_ANY, 0, env.server_port );
 			}
 			wHdr  = null;
+			
+			// now the tunnel is up...
+			OnTunnelStateChangeListener l = onStateChange;
+			if ( null != l)
+				l.onTunnelStateChange( true );
 
 			while ( true ) {
 				handleStream();

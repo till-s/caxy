@@ -351,6 +351,21 @@ public static void main(String [] args)
 
 				tunlHdlr = new TunnelHandler(pool, inpStrm, tunEnv);
 
+				if ( ! inside ) {
+					tunlHdlr.setOnTunnelStateChangeListener(
+						new TunnelHandler.OnTunnelStateChangeListener() {
+						@Override
+						public void onTunnelStateChange(boolean up) {
+							if ( up )
+							System.err.println("CAXY -- tunnel now established");
+							else	
+							System.err.println("CAXY -- tunnel torn down");
+						}
+						}
+					);
+				}
+
+
 				if ( server ) {
 					(new Thread(tunlHdlr)).start();
 				} else {
