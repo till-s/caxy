@@ -145,7 +145,7 @@ public class TunnelHandler implements Runnable {
 			synchronized ( this ) {
 				udp_dst[0] = insaCache.get( wHdr.get_caddr(), wHdr.get_cport());
 			}
-			clnt       = proxyPool.get( CaxyConst.INADDR_ANY, 0, 0 );
+			clnt       = proxyPool.get( CaxyConst.INADDR_ANY, 0, env.server_port );
 		} else {
 			clnt       = proxyPool.get( wHdr.get_caddr(), wHdr.get_cport(), 0 );
 		}
