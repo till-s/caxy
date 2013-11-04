@@ -1,9 +1,19 @@
 <project name="caxy" default="dist" basedir=".">
+	<property environment="env" />
 	<property name="src" value="caxy"/>
 	<property name="bld" value="build"/>
 	<property name="dst" value="dist"/>
 	<property name="sdt" value="srcdist"/>
 	<property name="gnu" value="gnu/getopt"/>
+	<condition property="ant.build.javac.target" value="${env.JAVA_CROSS_TARGET}" >
+		<isset property="env.JAVA_CROSS_TARGET" />
+	</condition>
+	<condition property="ant.build.javac.source" value="${env.JAVA_CROSS_TARGET}" >
+		<isset property="env.JAVA_CROSS_TARGET" />
+	</condition>
+	<condition property="ant.build.javac.bootclasspath" value="${env.JAVA_CROSS_BOOTCLASSPATH}" else="" >
+		<isset property="env.JAVA_CROSS_BOOTCLASSPATH" />
+	</condition>
 
 	<path id="classpath">
 		<pathelement location="${bld}"/>
@@ -16,6 +26,7 @@
 
 	<target name="gnucomp" depends="init" description="compile gnu getopt">
 		<javac includeantruntime="false"
+		       bootclasspath="${ant.build.javac.bootclasspath}"
 		       srcdir="${gnu}" destdir="${bld}"
 		       excludes="**/GetoptDemo.java"
 		       debug="true"    debuglevel="lines,source"
@@ -42,6 +53,7 @@
 		<property name="blax" refid="classpath"/>
 		<echo   message="My classpath ${blax}"/>
 		<javac includeantruntime="false"
+		       bootclasspath="${ant.build.javac.bootclasspath}"
 		       srcdir="${src}" destdir="${bld}"
 		       excludes="${java.preV6.exclude}"
 		       debug="true" debuglevel="lines,source">
