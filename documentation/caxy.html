@@ -193,11 +193,12 @@ CA-UDP messages for tunneling them via TCP. </p>
 <h3>Terminology </h3>
 <dl>
   <dt>insidehost</dt>
-    <dd>ssh-reachable machine on CA network; has direct connectivity to
+    <dd>ssh-reachable machine on CA network
+      ("<em><strong>inside</strong></em>"); has direct connectivity to
     IOCs.</dd>
   <dt>outsidehost</dt>
-    <dd>'laptop' out on the internet. Wishes to reach CA network via secure
-      tunnel. </dd>
+    <dd>'laptop' out on the internet ("<strong><em>outside</em></strong>").
+      Wishes to reach CA network via secure tunnel. </dd>
 </dl>
 
 <h3>Prerequisites</h3>
@@ -211,7 +212,8 @@ CA-UDP messages for tunneling them via TCP. </p>
   <li>ssh client (<em><a href="http://www.openssh.org/">openssh</a></em> -
     linux, bsd, osx, <a
     href="http://www.chiark.greenend.org.uk/~sgtatham/putty/"><em>putty</em></a>
-    - windows). Needed on outside only. </li>
+    - windows). Needed on the outside only.</li>
+  <li>ssh server. Needed on the inside only.</li>
 </ul>
 
 <h3>1. Launch Tunnel </h3>
@@ -562,7 +564,10 @@ attempt to start a repeater nor check if one is running. </p>
     <dd>Prints release/version information. </dd>
   <dt>-I</dt>
     <dd>Run in 'inside' mode. If this switch is not given then run in 'outside'
-      mode. </dd>
+      mode.</dd>
+  <dt>-f</dt>
+    <dd>Ignored for compatibility with C version. Note that -S always executes
+      in the foreground (unlike C version).</dd>
   <dt>-a 'ca_addr_list'</dt>
     <dd>Like the <code>EPICS_CA_ADDR_LIST</code> env-var. Multiple -a options
       and the env-var are combined into a single list. Only effective in
@@ -587,7 +592,7 @@ attempt to start a repeater nor check if one is running. </p>
     <dd><p>Enable debugging messages. &lt;flags&gt; is a bit-set composed of</p>
       <pre>                   0x1: dump UDP messages
                    0x2: dump TCP messages
-                   0x8: suppress beacon messages from debug output
+                   0x8: suppress beacon messages from debug output<br />                  0x10: trace lifecycle of threads<br />               0x10000: dump raw tunneled message contents
                0x20000: trace how java properties are looked up
                0x40000: trace rehow CA addr list is assembled</pre>
     </dd>
@@ -610,6 +615,24 @@ attempt to start a repeater nor check if one is running. </p>
       forwarded by <em>ssh</em>.</p>
       <p>You probably don't need to use this option.</p>
     </dd>
+  <dt>-P</dt>
+    <dd><p>Accept connections from anywhere (only relevant on 'inside' and when
+      not using STDIO for tunnel traffic; see -p, -S). By default only
+      connections from the machine where caxyj is running are accepted.</p>
+    </dd>
+  <dt>-S</dt>
+    <dd><p>'server-mode'. Like '-I' but manage/accept multiple connections from
+      multiple 'outside' clients. The main program remains running in the
+      foreground. In this mode multiple (unrelated) 'outside' clients can
+      create ssh tunnels from anywhere and connect to one single, shared
+      <em><strong>caxy</strong></em> server. The <strong><em>caxy</em></strong>
+      server may be started -- e.g., by a startup script -- locally on an
+      inside machine.</p>
+    </dd>
+    <dd>Useful also if the 'outside' client dies and is restarted; no restart
+      of the 'inside' is necessary in this mode.</dd>
+    <dd><em>REQUIRES</em> -p, i.e., a server cannot use STDIO for tunnel
+      traffic.</dd>
   <dt>-- &lt;args&gt;</dt>
     <dd>Any extra arguments given to <strong><em>caxy</em></strong> are
       interpreted as a secondary or child command and its arguments with which
