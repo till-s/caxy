@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+      "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=iso-8859-1" />
+  <title>UDP Proxy for EPICS Channel-Access Tunneling with SSH</title>
+  <meta name="generator" content="Amaya, see http://www.w3.org/Amaya/" />
+  <style type="text/css" title="Amaya theme">
+/* Modern style for Amaya Editor Lite */
+
+/* default rules for the whole document */
+body {
+    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-weight: normal;
+    font-style: normal;
+    color: black;
+    background-color: white;
+    line-height: 1.2em;
+    margin-left: 4em;
+    margin-right: 2em;
+   }
+
+/* paragraphs */
+p  {
+    padding: 0;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    text-align: left;
+   }
+
+/* headings */
+h1 {
+    font-size: 180%;
+    font-weight: bold;
+    font-style: normal;
+    font-variant: small-caps;
+    text-align: left;
+    padding: 0;
+    margin-top: 1.7em;
+    margin-bottom: 1.7em;
+   }
+h2 {
+    font-size: 150%;
+    font-weight: bold;
+    font-style: normal;
+    padding: 0;
+    margin-top: 1.5em;
+    margin-bottom: 1.1em;
+   }
+h3 {
+    font-size: 130%;
+    font-weight: bold;
+    font-style: normal;
+    padding: 0;
+    margin-top: 1.3em;
+    margin-bottom: 1.1em;
+   }
+h4 {
+    font-size: 110%;
+    font-weight: bold;
+    font-style: normal;
+    padding: 0;
+    margin-top: 1.1em;
+    margin-bottom: 1.1em;
+   }
+h5 {
+    font-size: 100%;
+    font-weight: bold;
+    font-style: italic;
+    padding: 0;
+    margin-top: 1em;
+    margin-bottom: 1em;
+   }
+h6 {
+    font-size: 100%;
+    font-weight: normal;
+    font-style: italic;
+    padding: 0;
+    margin-top: 1em;
+    margin-bottom: 1em;
+   }
+
+/* divisions */
+div {
+    padding: 0;
+    margin-top: 0em;
+    margin-bottom: 0em;
+   }
+
+/* lists */
+ul, ol {
+    padding: 0 0 0 3em;
+    margin-top: 1em;
+    margin-bottom: 1em;
+   }
+ul ul, ol ol, ul ol, ol ul {
+    margin-top: 1em;
+    margin-bottom: 1em;
+   }
+li {
+    padding: 0;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    text-align: left;
+   }
+li p {
+    margin-top: 1em;
+    margin-bottom: 1em;
+   }
+dl {
+    padding: 0;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    margin-left: 1em;
+   }
+dl dl {
+    margin-top: 0em;
+    margin-bottom: 0em;
+   }
+dt {
+    padding: 0;
+    font-weight: bold;
+    margin-top: .3em;
+    margin-bottom: .3em;
+   }
+dd {
+    padding: 0;
+    margin-top: .3em;
+    margin-left: 3em;
+    margin-bottom: .3em;
+   }
+dl p {
+    margin-top: .3em;
+    margin-bottom: .3em;
+   }
+
+/* inline */
+strong {
+    font-weight: bold;
+   }
+em {
+    font-style: italic;
+   }
+code {
+    font-family: Courier New, Courier, monospace;
+   }
+ins {
+    background-color: yellow;
+    text-decoration: underline;
+   }
+del {
+    text-decoration: line-through;
+   }
+
+/* anchors */
+a[href] {
+    color: blue;
+    text-decoration: underline;
+   }
+
+/* end */
+  </style>
+</head>
+
+<body>
+<h1>UDP Proxy for EPICS Channel-Access Tunneling with SSH</h1>
+
+<h2>What's New?</h2>
+<dl>
+  <dt>2013/11/1 - Caxy-2.0.2 released</dt>
+    <dd><ul>
+        <li>Bump of protocol version (i.e., both 'inside' and 'outside' must
+          run version 2.0 or later). The change is small but not backwards
+          compatible. It allows the outside to detect that the tunnel has been
+          established.</li>
+        <li>Server mode has been added (-S). This is useful under Android (an
+          Android port is available).</li>
+        <li>Code better modularized. Can use relevant classes w/o a 'main'
+          application (useful under Android).</li>
+        <li>Use ProxifiedSocketChannel class for the TCP tunnel (when
+          <em>not</em> using ssh's stdio). This allows for easy 'proxification'
+          of the CA tunnel connection itself. No dedicated ssh tunnel is then
+          necessary (-D 1080 is all you need). Under normal circumstances the
+          most convenient method to set up a tunnel is using ssh's STDIO
+        (RTM).</li>
+      </ul>
+    </dd>
+</dl>
+
+<h2>Introduction</h2>
+
+<p>The <a href="http://www.aps.anl.gov/epics/">EPICS</a> <a
+href="http://www.aps.anl.gov/epics/docs/ca.php">CA protocol</a> uses both, TCP
+and UDP messages. While it is easy to tunnel the former using the powerful
+port-forwarding features of SSH it is not straightforward to tunnel UDP
+messages.</p>
+
+<p>This document presents the <strong><em>caxy</em></strong> proxy software
+that encapsulates (and modifies) CA-UDP messages for tunneling them via TCP.</p>
+
+<p>TCP connections can easily be forwarded through a secure channel using <a
+href="http://www.openssh.org">openssh</a>'s '-D' option (<a
+href="http://www.chiark.greenend.org.uk/~sgtatham/putty/">putty</a> under
+windows implements an equivalent feature). Assume you have a 'insidehost'
+machine which is only reachable via ssh but has connectivity to an <a
+href="http://www.aps.anl.gov/epics/">EPICS</a> CA subnet. You want to connect
+to EPICS IOCs on that subnet from an 'outsidelaptop' machine which is somewhere
+out on the internet:</p>
+<pre>  outsidelaptop&gt; ssh -D 1080  user@insidehost</pre>
+
+<p>opens a secure connection to 'insidehost' from 'outsidelaptop'. The command
+also starts a <a href="http://en.wikipedia.org/wiki/SOCKS">SOCKS</a> proxy
+server on 'outsidelaptop' port 1080 which allows you to forward any TCP
+connection to a destination reachable from 'insidehost' through the secure
+channel (only the stretch between 'outsidelaptop' and 'insidehost' is
+encrypted/secure).</p>
+
+<p>In order to let a CA client use the SOCKS proxy server you must either patch
+the CA client library (so that it natively supports SOCKS proxies) or use
+so-called 'proxifier' software (e.g., <a name="tsocks" id="tsocks"
+href="http://tsocks.sourceforge.net">tsocks</a> or <a
+href="http://www.inet.no/dante/">dante</a>) which intercepts the connect()
+system-call and sets up a connection through a SOCKS proxy instead.</p>
+
+<p>Using a patched CA client library you define a SOCKS proxy and then use CA
+clients as usual:</p>
+<pre><code>  export EPICS_SOCKS_PROXY=localhost:1080
+  caget SOME_PV</code></pre>
+
+<p>If you use a proxifier then you 'proxify' a shell session and use CA clients
+as usual (the proxifier software usually needs you to write a configuration
+file; consult the documentation). Using e.g., 'dante' (note the '.'):</p>
+<pre>  . socksify
+  caget SOME_PV</pre>
+
+<p>The described procedure (start <code>ssh</code> with <code>-D</code>, use
+patched or proxified CA client) is enough to handle the TCP parts of the CA
+protocol. However, using the described steps is not enough and <strong><em>does
+not work</em></strong> by itself because to UDP parts of CA have not been dealt
+with properly.</p>
+
+<p>This is where the <strong>caxy</strong> software comes to our rescue.
+<strong>caxy</strong> encapsulates the UDP portions of the CA protocol and
+forwards them through a secure TCP channel. <strong>caxy</strong> properly
+deals with</p>
+<ul>
+  <li>CA search request and reply messages (requests typically are UDP
+    broadcasts)</li>
+  <li>CA beacons</li>
+</ul>
+
+<h2>CAXY -- Channel Access UDP Proxy</h2>
+
+<p>The <strong>caxy</strong> software handles the UDP aspects of the
+Channel-Access protocol, encapsulating UDP messages and forwarding them through
+a secure channel. <strong>caxy</strong> is written in <em>java</em> - there is
+usually no need for compiling anything. Just download 'caxy.jar' and execute on
+any platform (which supports java). <strong>caxy</strong> also supports
+starting up a complete tunnel for CA-UDP. Using a system with <code>ssh</code>
+available you start a CA-UDP tunnel simply with:</p>
+<pre>  outsidelaptop&gt; java -jar caxy.jar -- ssh -D1080 user@insidehost java -jar caxy.jar -I</pre>
+
+<p>After setting up such a tunnel, a patched or proxified CA client "just
+works", transparently connecting to any PV on the 'inside' network. It is
+assumed that the login script on 'insidehost' already sets up the CA
+environment correctly (otherwise, a setup script could easily be executed by
+the ssh command).</p>
+
+<p>For beacons to be propagated from the 'inside' to the 'outside' a
+CA-repeater must be running on the 'inside' (<strong>caxy</strong> does not
+attempt to start a repeater).</p>
+
+<h2>Why Should I Use CAXY?</h2>
+
+<p>Some obvious alternatives to <strong>caxy</strong> exist:</p>
+<dl>
+  <dt>EPICS base &gt;= <a
+  href="http://www.aps.anl.gov/epics/base/R3-14/12-docs/CAref.html#Environmen">3.14.12
+  supports CA search request via TCP</a>.</dt>
+    <dd>Yes - but it would require you to add each and every IOC to the
+      <strong>EPICS_CA_NAME_SERVERS</strong>. <strong>caxy</strong> can use
+      normal UDP broadcasts on the 'inside' without the need for assembling a
+      cumbersome-to-maintain list of all IOCs. The
+      <strong>EPICS_CA_NAME_SERVERS</strong> feature seems to be more useful in
+      combination with a CA gateway.</dd>
+</dl>
+<dl>
+  <dt>I can run a CA <a
+  href="http://www.aps.anl.gov/epics/extensions/gateway/index.php">gateway</a></dt>
+    <dd>Sure you can. But you might have to build, configure and maintain it.
+      Using <strong>caxy</strong> you can just download and run a jar file.
+      Easier and faster to get going. Also, if multiple people start running
+      gateways on 'insidehost' then you will have to think about how to pick
+      port numbers and make sure you set set them up and tunnel them correctly
+      and w/o conflicting with other users.</dd>
+</dl>
+
+<p>Finally - if you are a <a
+href="http://epics-jca.sourceforge.net/jca/">JCA</a> / <a
+href="http://epics-jca.sourceforge.net/caj/">CAJ</a> / <a
+href="http://css.desy.de/content/index_eng.html">CSS</a> user: CAJ may
+currently not support CA search requests via TCP. However,
+<strong>caxy</strong> <em>does</em> work with CAJ/CSS and a patch adding native
+SOCKS proxy support for CAJ is available.</p>
+
+<h2>Downloads</h2>
+<ul>
+  <li>Binary jar file (requires JRE &gt;= 1.6)</li>
+  <li>Binary jar file built with JDK-1.5 (no auto_addr_list support on 'inside'
+    -- irrelevant for 'outside', i.e., you can run this on the 'outside' and
+    still have auto_addr_list support as long as you run the variant built for
+    1.6 on the 'inside')</li>
+  <li>Source distribution (requires JDK &gt;= 1.5 and Apache ANT to
+  rebuild)</li>
+  <li>git repository</li>
+  <li>patch to add native SOCKS proxy support to EPICS-3.14.12. The patched
+    EPICS libraries may be instructed to use a ssh SOCKS proxy by setting 
+    <pre><code>  
+  export EPICS_SOCKS_PROXY=localhost</code></pre>
+  </li>
+  <li>patch to add native SOCKS proxy support to CAJ (see here for more
+    information).</li>
+</ul>
+
+<h2>Documentation</h2>
+
+<p>More comprehensive documentation is available <a
+href="documentation/caxy.html">here</a> (included with source distribution).</p>
+<dl>
+  <dt></dt>
+</dl>
+</body>
+</html>
