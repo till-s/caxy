@@ -410,7 +410,7 @@ public static void main(String [] args)
 	System.err.format( "                      in this mode. REQUIRES -p, i.e., a server cannot use STDIO for\n");
 	System.err.format( "                      tunnel traffic.\n\n");
 
-	System.err.format( "       -f             ignored for compatibility with C version. Note that -S always\n");
+	System.err.format( "       -f             Ignored for compatibility with C version. Note that -S always\n");
 	System.err.format( "                      executes in the foreground.\n\n");
 
     System.err.format( "       -p tunnel_port TCP port to use for the tunnel (defaults to: %d).\n", TunnelHandler.TUNNEL_PORT_DFLT);
