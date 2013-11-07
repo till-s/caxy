@@ -11,6 +11,12 @@
 	<condition property="ant.build.javac.source" value="${env.JAVA_CROSS_TARGET}" >
 		<isset property="env.JAVA_CROSS_TARGET" />
 	</condition>
+	<condition property="jrepostfix" value="-jre-${env.JAVA_CROSS_TARGET}" else="" >
+		<isset property="env.JAVA_CROSS_TARGET" />
+	</condition>
+	<condition property="jtargetvers" value="${env.JAVA_CROSS_TARGET}" else="${ant.java.version}" >
+		<isset property="env.JAVA_CROSS_TARGET" />
+	</condition>
 	<condition property="ant.build.javac.bootclasspath" value="${env.JAVA_CROSS_BOOTCLASSPATH}" else="" >
 		<isset property="env.JAVA_CROSS_BOOTCLASSPATH" />
 	</condition>
@@ -44,9 +50,9 @@
 		         check for that
 		    -->
 			<or>
-			<equals arg1="${ant.java.version}" arg2="1.5" trim="true"/>
-			<equals arg1="${ant.java.version}" arg2="1.4" trim="true"/>
-			<equals arg1="${ant.java.version}" arg2="1.3" trim="true"/>
+			<equals arg1="${jtargetvers}" arg2="1.5" trim="true"/>
+			<equals arg1="${jtargetvers}" arg2="1.4" trim="true"/>
+			<equals arg1="${jtargetvers}" arg2="1.3" trim="true"/>
 			</or>
 		</condition>
 		<echo message="${java.preV6.exclude}"/>
@@ -69,7 +75,7 @@
 
 	<target name="dist" depends="copyresources" description="jar it up">
 		<mkdir dir="${dst}"/>
-		<jar jarfile="${dst}/${git_version_string}.jar">
+		<jar jarfile="${dst}/${git_version_string}${jrepostfix}.jar">
 			<fileset dir="${bld}" />
 			<fileset dir="." includes="gnu/**"/>
 			<manifest>
@@ -128,6 +134,7 @@
 
 	<target name="jvers">
 		<echo message="JDK Version ${ant.java.version}"/>
+		<echo message="Java target version ${jtargetvers}" />
 	</target>
 
 </project>
