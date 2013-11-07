@@ -403,7 +403,7 @@ public static void main(String [] args)
     System.err.format( "       -I             Run in 'inside' mode as a proxy for CA clients\n");
     System.err.format( "                      on the 'outside'.\n\n");
 
-	System.err.format( "       -S             'server-mode'. Like '-I' but manage/accept multiple connections\n");
+	System.err.format( "       -S             'Server-mode'. Like '-I' but manage/accept multiple connections\n");
 	System.err.format( "                      from multiple 'outside' clients. The main program remains\n");
 	System.err.format( "                      running in the foreground. Useful also if the 'outside' client\n");
 	System.err.format( "                      dies and is restarted; no restart of the 'inside' is necessary\n");
