@@ -198,7 +198,7 @@ CA-UDP messages for tunneling them via TCP. </p>
     IOCs.</dd>
   <dt>outsidehost</dt>
     <dd>'laptop' out on the internet ("<strong><em>outside</em></strong>").
-      Wishes to reach CA network via secure tunnel. </dd>
+      Wishes to reach CA network via a secure tunnel. </dd>
 </dl>
 
 <h3>Prerequisites</h3>
@@ -618,7 +618,7 @@ attempt to start a repeater nor check if one is running. </p>
   <dt>-P</dt>
     <dd><p>Accept connections from anywhere (only relevant on 'inside' and when
       not using STDIO for tunnel traffic; see -p, -S). By default only
-      connections from the machine where caxyj is running are accepted.</p>
+      connections from the machine where caxy is running are accepted.</p>
     </dd>
   <dt>-S</dt>
     <dd><p>'server-mode'. Like '-I' but manage/accept multiple connections from
@@ -757,6 +757,7 @@ non-standard settings but may just use the default ones.</p>
 <h3>caxy TCP can also be tunneled explicitly via ssh: </h3>
 <pre># Assume: CA on a.b.c.255 subnet uses port 5066
 # We use port 5056 for caxy's tunnel instead of STDIO
+# (assume inside has a script 'caxy' which starts up caxy.jar)
 
   ssh -t -D 1080 -L 5056:localhost:5056 user@insidehost caxy -I -p5056 -a a.b.c.255:5066
 
@@ -764,6 +765,19 @@ non-standard settings but may just use the default ones.</p>
 
   java -jar caxy.jar -p 5056 &amp;
 
+  . socksify
+  caget some_PV
+
+</pre>
+
+<h3>caxy TCP using a SOCKS tunnel</h3>
+<pre># Same as previous example but caxy's tunnel uses the SOCKS proxy, too
+
+  ssh -t -D 1080 user@insidehost java -jar caxy.jar -I -p5056 -a a.b.c.255:5066
+
+# caxy on outside does use SOCKS; CA clients are proxified
+
+  java -DsocksProxyHost=localhost caxy.jar -p 5056 &amp;
   . socksify
   caget some_PV</pre>
 
@@ -913,6 +927,10 @@ original packet structure is preserved. </p>
 <p>Note that the java version of caxy ONLY support protocol version 2. Hence it
 is not possible to co-operate with older versions of the C implementation.</p>
 
+<p>CATUN protocol V3 defines a small albeit not backwards compatible addition
+to the initial handshake procedure which enables the outside to detect that the
+the tunnel has been established.</p>
+
 <h2>Building/Hacking CAXY</h2>
 
 <p>If you want to mess around with the source code or simply rebuild
@@ -920,7 +938,7 @@ is not possible to co-operate with older versions of the C implementation.</p>
 <ul>
   <li>JDK &gt;= 1.5 (1.6 and later recommended, at least on the 'inside'; the
     'auto_addr_list' feature requires at least 1.6)</li>
-  <li>Apache 'ant' - this is the 'build' tool (you want a reasonable recent
+  <li>Apache 'ant' - this is the 'build' tool (you want a reasonably recent
     version).</li>
   <li>Source distribution of <strong>caxy</strong>.</li>
 </ul>
