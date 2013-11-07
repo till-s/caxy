@@ -1,11 +1,11 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+      "http://www.w3.org/TR/html4/loose.dtd">
 <?xml version="1.0" encoding="iso-8859-1"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-      "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
 <head>
-  <meta http-equiv="content-type" content="text/html; charset=iso-8859-1" />
+  <meta http-equiv="content-type" content="text/html; charset=iso-8859-1">
   <title>UDP Proxy for EPICS Channel-Access Tunneling with SSH</title>
-  <meta name="generator" content="Amaya, see http://www.w3.org/Amaya/" />
+  <meta name="generator" content="Amaya, see http://www.w3.org/Amaya/">
   <style type="text/css" title="Amaya theme">
 /* Modern style for Amaya Editor Lite */
 
@@ -182,9 +182,9 @@ a[href] {
         <li>Use ProxifiedSocketChannel class for the TCP tunnel (when
           <em>not</em> using ssh's stdio). This allows for easy 'proxification'
           of the CA tunnel connection itself. No dedicated ssh tunnel is then
-          necessary (-D 1080 is all you need). Under normal circumstances the
-          most convenient method to set up a tunnel is using ssh's STDIO
-        (RTM).</li>
+          necessary (-D 1080 is all you need). Nevertheless: under normal
+          circumstances the most convenient method to set up a tunnel is using
+          ssh's STDIO (RTM).</li>
       </ul>
     </dd>
 </dl>
@@ -197,18 +197,20 @@ and UDP messages. While it is easy to tunnel the former using the powerful
 port-forwarding features of SSH it is not straightforward to tunnel UDP
 messages.</p>
 
-<p>This document presents the <strong><em>caxy</em></strong> proxy software
-that encapsulates (and modifies) CA-UDP messages for tunneling them via TCP.</p>
+<p>This site presents the <strong><em>caxy</em></strong> proxy software that
+encapsulates (and modifies) CA-UDP messages for tunneling them via TCP.</p>
+
+<h2>Dynamic TCP Tunneling with SSH and SOCKS</h2>
 
 <p>TCP connections can easily be forwarded through a secure channel using <a
-href="http://www.openssh.org">openssh</a>'s '-D' option (<a
+href="http://www.openssh.org/">openssh</a>'s '-D' option (<a
 href="http://www.chiark.greenend.org.uk/~sgtatham/putty/">putty</a> under
 windows implements an equivalent feature). Assume you have a 'insidehost'
 machine which is only reachable via ssh but has connectivity to an <a
 href="http://www.aps.anl.gov/epics/">EPICS</a> CA subnet. You want to connect
 to EPICS IOCs on that subnet from an 'outsidelaptop' machine which is somewhere
 out on the internet:</p>
-<pre>  outsidelaptop&gt; ssh -D 1080  user@insidehost</pre>
+<pre>  <code>outsidelaptop&gt; ssh -D 1080  user@insidehost</code></pre>
 
 <p>opens a secure connection to 'insidehost' from 'outsidelaptop'. The command
 also starts a <a href="http://en.wikipedia.org/wiki/SOCKS">SOCKS</a> proxy
@@ -219,8 +221,10 @@ encrypted/secure).</p>
 
 <p>In order to let a CA client use the SOCKS proxy server you must either patch
 the CA client library (so that it natively supports SOCKS proxies) or use
-so-called 'proxifier' software (e.g., <a name="tsocks" id="tsocks"
-href="http://tsocks.sourceforge.net">tsocks</a> or <a
+so-called '<a
+href="http://en.wikipedia.org/wiki/Comparison_of_proxifiers">proxifier</a>'
+software (e.g., <a name="tsocks" id="tsocks"
+href="http://tsocks.sourceforge.net/">tsocks</a> or <a
 href="http://www.inet.no/dante/">dante</a>) which intercepts the connect()
 system-call and sets up a connection through a SOCKS proxy instead.</p>
 
@@ -230,16 +234,16 @@ clients as usual:</p>
   caget SOME_PV</code></pre>
 
 <p>If you use a proxifier then you 'proxify' a shell session and use CA clients
-as usual (the proxifier software usually needs you to write a configuration
+as usual (the proxifier software usually requires you to write a configuration
 file; consult the documentation). Using e.g., 'dante' (note the '.'):</p>
-<pre>  . socksify
-  caget SOME_PV</pre>
+<pre>  <code>. socksify
+  caget SOME_PV</code></pre>
 
 <p>The described procedure (start <code>ssh</code> with <code>-D</code>, use
 patched or proxified CA client) is enough to handle the TCP parts of the CA
 protocol. However, using the described steps is not enough and <strong><em>does
-not work</em></strong> by itself because to UDP parts of CA have not been dealt
-with properly.</p>
+not work</em></strong> by itself because the UDP parts of CA have not been
+dealt with properly.</p>
 
 <p>This is where the <strong>caxy</strong> software comes to our rescue.
 <strong>caxy</strong> encapsulates the UDP portions of the CA protocol and
@@ -260,7 +264,7 @@ usually no need for compiling anything. Just download 'caxy.jar' and execute on
 any platform (which supports java). <strong>caxy</strong> also supports
 starting up a complete tunnel for CA-UDP. Using a system with <code>ssh</code>
 available you start a CA-UDP tunnel simply with:</p>
-<pre>  outsidelaptop&gt; java -jar caxy.jar -- ssh -D1080 user@insidehost java -jar caxy.jar -I</pre>
+<pre>  <code>outsidelaptop&gt; java -jar caxy.jar -- ssh -D1080 user@insidehost java -jar caxy.jar -I</code></pre>
 
 <p>After setting up such a tunnel, a patched or proxified CA client "just
 works", transparently connecting to any PV on the 'inside' network. It is
@@ -270,7 +274,9 @@ the ssh command).</p>
 
 <p>For beacons to be propagated from the 'inside' to the 'outside' a
 CA-repeater must be running on the 'inside' (<strong>caxy</strong> does not
-attempt to start a repeater).</p>
+attempt to start a repeater). For beacons to be seen by clients on the
+'outside' a CA-repeater must also be running on the 'outside' but the standard
+CA clients usually take care of starting a repeater when necessary.</p>
 
 <h2>Why Should I Use CAXY?</h2>
 
@@ -305,29 +311,61 @@ currently not support CA search requests via TCP. However,
 <strong>caxy</strong> <em>does</em> work with CAJ/CSS and a patch adding native
 SOCKS proxy support for CAJ is available.</p>
 
+<h2>Prerequisites</h2>
+<ul>
+  <li>Sufficiently recent CA protocol (&gt;= V4.8 which dates back quite a
+    while; EPICS 3.14.1 from 10 years ago uses V4.11)</li>
+  <li>ssh server on 'inside' network which allows port forwarding</li>
+  <li>ssh client with SOCKS proxy server (openssh, putty)</li>
+  <li>patched CA/Com libraries (C/C++ std. version or 'CAJ', java
+    implementation) <strong><em>or</em></strong> proxifier software (tsocks,
+    dante)</li>
+  <li>JRE 1.5 (1.6 or later recommended)</li>
+  <li>caxy.jar (download here)</li>
+</ul>
+
 <h2>Downloads</h2>
 <ul>
-  <li>Binary jar file (requires JRE &gt;= 1.6)</li>
-  <li>Binary jar file built with JDK-1.5 (no auto_addr_list support on 'inside'
-    -- irrelevant for 'outside', i.e., you can run this on the 'outside' and
-    still have auto_addr_list support as long as you run the variant built for
-    1.6 on the 'inside')</li>
-  <li>Source distribution (requires JDK &gt;= 1.5 and Apache ANT to
-  rebuild)</li>
-  <li>git repository</li>
-  <li>patch to add native SOCKS proxy support to EPICS-3.14.12. The patched
-    EPICS libraries may be instructed to use a ssh SOCKS proxy by setting 
+  <li><a href="dist/caxy-2.0.2-jre1.6.jar">Binary jar file</a> (requires JRE
+    &gt;= 1.6). If you want you can rename the jar file e.g., to 'caxy.jar'
+    after downloading.</li>
+  <li><a href="dist-1.5/caxy-2.0.2-jre1.5.jar">Binary jar file built with
+    JDK-1.5</a> (no auto_addr_list support on 'inside' -- irrelevant for
+    'outside', i.e., you can run this on the 'outside' and still have
+    auto_addr_list support as long as you run the variant built for 1.6 on the
+    'inside'). If you want you can rename the jar file e.g., to 'caxy.jar'
+    after downloading.</li>
+  <li><a href="srcdist/caxy-2.0.2-source.jar">Source distribution</a> (requires
+    JDK &gt;= 1.5 and Apache ANT to rebuild)</li>
+  <li><a href="http://www.slac.stanford.edu/~strauman/epics/caxy/caxy.git/">git
+    repository</a>. You can view a currently checked out version following this
+    link or clone it using the link URL.</li>
+</ul>
+<ul>
+  <li><a href="patches/base-3.14.12.1-socks-proxy.diff">patch to add native
+    SOCKS proxy support to EPICS-3.14.12</a>. You can also download the latest
+    version from <a
+    href="https://bugs.launchpad.net/epics-base/+bug/1012788">here</a> (look
+    for patch file).The patched EPICS libraries may be instructed to use a ssh
+    SOCKS proxy by setting 
     <pre><code>  
   export EPICS_SOCKS_PROXY=localhost</code></pre>
   </li>
-  <li>patch to add native SOCKS proxy support to CAJ (see here for more
+  <li><a href="patches/caj-1.1.x-socks-proxy-1.0.diff">patch to add native
+    SOCKS proxy support to CAJ</a> (see <a
+    href="documentation/caxy.html#section_7_1_1_1">here</a> for more
     information).</li>
+  <li>Pre-built (JDK 1.6) versions of CAJ with SOCKS support: <a
+    href="caj-1.1.7-socks-proxy.jar">caj-1.1.7</a>, <a
+    href="caj-1.1.8-socks-proxy.jar">caj-1.1.8</a>, <a
+    href="caj-1.1.9-socks-proxy.jar">caj-1.1.9</a>, <a
+    href="caj-1.1.10-socks-proxy.jar">caj-1.1.10</a>.</li>
 </ul>
 
 <h2>Documentation</h2>
 
-<p>More comprehensive documentation is available <a
-href="documentation/caxy.html">here</a> (included with source distribution).</p>
+<p>More comprehensive <a href="documentation/caxy.html">documentation is
+available here</a> (included with source distribution).</p>
 <dl>
   <dt></dt>
 </dl>
