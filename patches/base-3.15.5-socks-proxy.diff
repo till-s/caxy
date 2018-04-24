@@ -1,0 +1,676 @@
+*** R3.15.5-1.0.13/configure/CONFIG_ENV.orig	2018-04-17 15:20:46.316862045 -0700
+--- R3.15.5-1.0.13/configure/CONFIG_ENV	2018-04-23 10:19:57.625726106 -0700
+***************
+*** 54,56 ****
+--- 54,58 ----
+  EPICS_CMD_PROTO_PORT=
+  EPICS_AR_PORT=7002
+  
++ # Proxy
++ EPICS_SOCKS_PROXY=
+*** R3.15.5-1.0.13/src/libCom/osi/epicsConnectViaProxy.c.orig	2018-04-23 10:19:57.625726106 -0700
+--- R3.15.5-1.0.13/src/libCom/osi/epicsConnectViaProxy.c	2018-04-23 10:19:57.625726106 -0700
+***************
+*** 0 ****
+--- 1,605 ----
++ 
++ /* SOCKS4 and SOCKS5 client implementation (partial). This is mostly aimed at the ssh proxy; hence
++  * there is no support for authentication methods.
++  *
++  * Since the API is designed to be a plug-in replacement for 'connect' we don't use the DNS
++  * lookup features (have the proxy server resolve hostnames) of SOCKS4a and SOCKS5.
++  *
++  * The default proxy selector is dumb. It only can deal with one proxy and uses it for all
++  * connections.
++  *
++  * The selector expects the EPICS_SOCKS_PROXY env-var obey the syntax:
++  *
++  *  [<proto>://]<host>[:<port>]
++  *
++  * where <proto> may be 'socks4' or 'socks5'. If no protocol is specified then we try
++  * V5 first and if that fails then we try V4. However, there is no guarantee that this
++  * succeeds since there may be garbage (from the server's point of view) in the channel
++  * if it doesn't understand V5. It may then be better to specify the protocol explicitly.
++  * If <port> is missing then the default, 1080 is used.
++  *
++  * E.g.:  export EPICS_SOCKS_PROXY=socks4://localhost:1080
++  *
++  */
++ 
++ /* Author: Till Straumann <strauman@slac.stanford.edu> */
++ 
++ #include <string.h>
++ #include <stdlib.h>
++ #include <ctype.h>
++ 
++ #define epicsExportSharedSymbols
++ #include <shareLib.h>
++ #include <epicsThread.h>
++ #include <epicsTime.h>
++ #include <envDefs.h>
++ #include <epicsString.h>
++ #include <osiSock.h>
++ #include <errlog.h>
++ #include <epicsTypes.h>
++ 
++ /* inet6 stuff wouldn't compile under windows */
++ #undef  USE_INET6_SUPPORT
++ 
++ 
++ #define SOCKS_PORT_DEFLT 1080
++ 
++ #define SOCKS_NEGO_TIMEOUT  5 /* seconds */
++ 
++ /* Constants defining the SOCKS protocols V4 and V5 */
++ 
++ #define SOCKS4_VERS                  0x04
++ #define SOCKS5_VERS                  0x05
++ 
++ #define SOCKS4_CMD_CONN              0x01
++ #define SOCKS4_CMD_BIND              0x02
++ 
++ #define SOCKS4_STA_GRANTED           0x5a
++ #define SOCKS4_STA_FAILED            0x5b
++ #define SOCKS4_STA_FAILED_NO_IDENTD  0x5c
++ #define SOCKS4_STA_FAILED_IDENTD     0x5d
++ 
++ /* length of request not including username */
++ #define SOCKS4_REQ_LEN                  8
++ #define SOCKS4_REP_LEN                  8
++ 
++ #define SOCKS5_AUTH_NONE             0x00
++ #define SOCKS5_AUTH_GSSAPI           0x01
++ #define SOCKS5_AUTH_USRNAME          0x02
++ 
++ #define SOCKS5_CMD_CONN              0x01
++ #define SOCKS5_CMD_BIND              0x02
++ #define SOCKS5_CMD_ASSOC             0x03
++ 
++ #define SOCKS5_ADDR_IPV4             0x01
++ #define SOCKS5_ADDR_DNS              0x03
++ #define SOCKS5_ADDR_IPV6             0x04
++ 
++ #define SOCKS5_PRE_REQ_HDR_LEN          2 /* not including auth array */
++ #define SOCKS5_REQ_LEN                  6
++ #define SOCKS5_PRE_REP_LEN              2
++ #define SOCKS5_REP_HDR_LEN              4 /* not covering a DNS reply length */
++ #define SOCKS5_REP_LEN                 20 /* not covering a DNS reply length */
++ 
++ #define SOCKS5_STA_GRANTED           0x00
++ #define SOCKS5_STA_FAILED            0x01
++ #define SOCKS5_STA_RULEVIOLATION     0x02
++ #define SOCKS5_STA_NETUNREACH        0x03
++ #define SOCKS5_STA_HOSTUNREACH       0x04
++ #define SOCKS5_STA_CONNREFUSED       0x05
++ #define SOCKS5_STA_TTLEXPIRED        0x06
++ #define SOCKS5_STA_PROTOERR          0x07
++ #define SOCKS5_STA_ATYPEUNSUPP       0x08
++ 
++ #define SOCKS_NULL                   0x00
++ 
++ typedef struct Socks4Req_ {
++ 	epicsUInt8	  vers;
++ 	epicsUInt8    cmnd;
++ 	epicsUInt16   port;
++ 	epicsUInt32   addr;
++ 	epicsUInt8    null;
++ 	epicsUInt8    unresolved_remote[]; /* Socks4a could send an unresolved host name here */
++ } Socks4Req;
++ 
++ typedef struct Socks4Rep_ {
++ 	epicsUInt8	   null;
++ 	epicsUInt8    stat;
++ 	epicsUInt8    unused[6];
++ } Socks4Rep;
++ 
++ typedef union Socks4ReqU_ {
++ 	Socks4Req  s4;
++ 	char       raw[sizeof(Socks4Req)];
++ } Socks4ReqU;
++ 
++ typedef union Socks4RepU_ {
++ 	Socks4Rep  s4;
++ 	char       raw[sizeof(Socks4Rep)];
++ } Socks4RepU;
++ 
++ /* For now we only support 1 method: AUTH_NONE; in
++  * the future, the array size may be increased.
++  * Note that the ssh SOCKS proxy does currently
++  * not support authentication.
++  */
++ #define OUR_SOCKS5_N_METH 1
++ 
++ typedef struct Socks5PreReq_ {
++ 	epicsUInt8    vers;
++ 	epicsUInt8    nmet;
++ 	epicsUInt8    meth[OUR_SOCKS5_N_METH];
++ } Socks5PreReq;
++ 
++ typedef struct Socks5PreRep_ {
++ 	epicsUInt8    vers;
++ 	epicsUInt8    meth;
++ } Socks5PreRep;
++ 
++ /* NOTE: for transferring a BIND address (name) this struct is not big enough!
++  *       space for the 'payload' (name + port-no) must be tacked on.
++  */
++ typedef struct Socks5ReqHdr_ {
++ 	epicsUInt8    vers;
++ 	epicsUInt8    cmnd;
++ 	epicsUInt8    rsvd;
++ 	epicsUInt8    atyp;
++ 	union {
++ 		struct {
++ 			epicsUInt32 addr;
++ 			epicsUInt16 port;
++ 		}      ipv4;
++ 		struct {
++ 			epicsUInt8  addr[16];
++ 			epicsUInt16 port;
++ 		}      ipv6;
++ 		struct {
++ 			epicsUInt8  alen;
++ 			epicsUInt8  addr[]; /* exact format of address depends on atyp */
++ 		}      bind;
++ 	}          addr;
++ } Socks5ReqHdr;
++ 
++ /* We don't need BIND since our API has the caller pass in a
++  * (resolved) address.
++  * We already have 15 bytes (the union uses 16 bytes due to ipv6).
++  * and the port; BIND_EXTRA_SPACE is on top of these.
++  */
++ #define BIND_EXTRA_SPACE 0
++ 
++ typedef union Socks5ReqU_ {
++ 	Socks5ReqHdr  s5;
++ 	epicsUInt8       raw[sizeof(Socks5ReqHdr) + BIND_EXTRA_SPACE];
++ } Socks5ReqU;
++ 
++ typedef struct Socks5RepHdr_ {
++ 	epicsUInt8       vers;
++ 	epicsUInt8       rply;
++ 	epicsUInt8       rsvd;
++ 	epicsUInt8       atyp;
++ } Socks5RepHdr;
++ 
++ static union {
++ 	struct sockaddr_in sin;
++ 	struct sockaddr    sa;
++ }                        proxy_sa_u;
++ 
++ static struct sockaddr  *proxy_sa        = 0;
++ static epicsThreadOnceId proxyselectOnce = EPICS_THREAD_ONCE_INIT;
++ static int               desSocksVers    = 0;
++ 
++ const struct sockaddr * epicsShareAPI
++ epicsDefaultSocksProxySelector(const struct sockaddr *addr, int *vers);
++ 
++ const struct sockaddr * (epicsShareAPI * epicsSocksProxySelect)(const struct sockaddr*, int *) = epicsDefaultSocksProxySelector;
++ 
++ static const char *
++ skipw(const char *str)
++ {
++ 	while ( *str && isspace(*str) )
++ 		str++;
++ 	return str;
++ }
++ 
++ static void
++ proxySelectInit(void *arg)
++ {
++ const char *proxy_env;
++ char       *dup = 0;
++ const char *str;
++ int         desv = 0;
++ 
++ 	if ( ! ( proxy_env = envGetConfigParamPtr( &EPICS_SOCKS_PROXY )) )
++ 		return;
++ 
++ 	if ( ! ( dup = epicsStrDup( proxy_env ) ) )
++ 		return;
++ 
++ 	str = skipw(dup);
++ 
++ 	if ( 0 == strncmp(str, "socks4:", strlen("socks4:")) ) {
++ 		desv = SOCKS4_VERS;
++ 		str = skipw(str + strlen("socks4:"));
++ 	} else if ( 0 == strncmp(str, "socks5:", strlen("socks5:")) ) { 
++ 		desv = SOCKS5_VERS;
++ 		str = skipw(str + strlen("socks5:"));
++ 	}
++ 	if ( desv ) {
++ 		if ( 0 == strncmp(str, "//", 2) )
++ 			str+=2;
++ 	}
++ 
++ 	if ( ! *str )
++ 		goto bail;
++ 
++ 	if ( aToIPAddr( str, SOCKS_PORT_DEFLT, &proxy_sa_u.sin ) ) {
++ 		errlogPrintf( "epicsProxySelect: unable to parse EPICS_SOCKS_PROXY: '%s'\n", dup );
++ 		return;
++ 	} 
++ 
++ 	proxy_sa     = &proxy_sa_u.sa;
++ 	desSocksVers = desv;
++ 
++ bail:
++ 	free( dup );
++ }
++ 
++ const struct sockaddr * epicsShareAPI
++ epicsDefaultSocksProxySelector(const struct sockaddr *addr, int *vers)
++ {
++ 	/* This implementation is primitive but could be expanded
++ 	 * to support different routes via different proxies
++ 	 */
++ 
++ 	epicsThreadOnce( &proxyselectOnce, proxySelectInit, 0 );
++ 
++ 	*vers = desSocksVers;
++ 
++ 	return proxy_sa;
++ }
++ 
++ static int
++ xferBuf(SOCKET sd, int do_rd, epicsUInt8 *buf, int len, const char *pre)
++ {
++ int            xfr;
++ char           msg[128];
++ const char     *m1;
++ fd_set         efds, ifds, ofds;
++ struct timeval tout;
++ epicsTimeStamp now, fut;
++ 
++ 	FD_ZERO( &efds );
++ 	FD_ZERO( &ifds );
++ 	FD_ZERO( &ofds );
++ 
++ 	FD_SET ( sd, &efds );
++ 
++ 	if ( do_rd ) {
++ 		FD_SET( sd, &ifds );
++ 		m1   = "read";
++ 	} else {
++ 		FD_SET( sd, &ofds );
++ 		m1   = "write";
++ 	}
++ 
++ 	if ( epicsTimeGetCurrent( &now ) )
++ 		return -1;
++ 
++ 	fut.secPastEpoch = now.secPastEpoch + SOCKS_NEGO_TIMEOUT;
++ 	fut.nsec         = now.nsec;
++ 
++ 	do {
++ 
++ 		/* calculate new timeout */
++ 		if ( fut.nsec < now.nsec ) {
++ 			now.nsec -= 1000000000;
++ 			now.secPastEpoch++;
++ 		}
++ 	
++ 		tout.tv_usec      = (fut.nsec - now.nsec)/1000;
++ 		tout.tv_sec       =  fut.secPastEpoch  - now.secPastEpoch;
++ 
++ 		if ( (int)tout.tv_sec < 0 ) {
++ 			return -1;
++ 			/* timed out */
++ 		}
++ 
++ 		/* xfer progress ? */
++ 		if ( select( sd + 1, &ifds, &ofds, &efds, &tout ) < 0 ) {
++ 			epicsSocketConvertErrnoToString(msg, sizeof(msg));
++ 			errlogPrintf( "%s: select failed: '%s'\n", pre, msg );
++ 			return -1;
++ 		}
++ 
++ 		xfr = do_rd ? recv( sd, buf, len, 0 ) : send( sd, buf, len, 0);
++ 
++ 		if ( xfr <= 0 ) {
++ 			if ( xfr < 0 ) {
++ 				epicsSocketConvertErrnoToString(msg, sizeof(msg));
++ 				errlogPrintf( "%s: %s failed: '%s'\n", pre, m1, msg );
++ 			} else {
++ 				errlogPrintf( "%s: %s incomplete (%i missing).\n", pre, m1, len);
++ 			}
++ 			return -1;
++ 		}
++ 
++ 		len -= xfr;
++ 
++ 		if ( len <= 0 )
++ 			break;
++ 
++ 		/* more to do; prepare for calculating new timeout */
++ 
++ 		buf += xfr;
++ 		if ( epicsTimeGetCurrent( &now ) )
++ 			return -1;
++ 		
++ 	} while ( 1 );
++ 
++ 	return 0;
++ }
++ 
++ static int
++ srcBuf(SOCKET sd, void *buf, int len, const char *pre)
++ {
++ 	return xferBuf( sd, 1, buf, len, pre );
++ }
++ 
++ static int
++ sinkBuf(SOCKET sd, void *buf, int len, const char *pre)
++ {
++ 	return xferBuf( sd, 0, buf, len, pre );
++ }
++ 
++ 
++ static int
++ socks4Negotiate(SOCKET sockfd, const struct sockaddr *addr)
++ {
++ Socks4ReqU req;
++ Socks4RepU rep;
++ int        len;
++ 
++ 	if ( AF_INET != addr->sa_family )
++ 		return -1;
++ 
++ 	req.s4.vers = SOCKS4_VERS;
++ 	req.s4.cmnd = SOCKS4_CMD_CONN;
++ 	/* already in network byte order */
++ 	req.s4.port = ((struct sockaddr_in*)addr)->sin_port;
++ 	req.s4.addr = ((struct sockaddr_in*)addr)->sin_addr.s_addr;
++ 	req.s4.null = SOCKS_NULL;
++ 
++ 	/* dont use sizeof(Socks4Req) because it is probably padded */
++ 	len = SOCKS4_REQ_LEN + 1; /* terminating NULL */
++ 
++ 	if ( sinkBuf( sockfd, req.raw, len, "socks4Negotiate") )
++ 		return -1;
++ 
++ 	if ( srcBuf( sockfd, rep.raw, SOCKS4_REP_LEN, "socks4Negotiate" ) )
++ 		return -1;
++ 
++ 	if ( SOCKS_NULL != rep.s4.null ) {
++ 		errlogPrintf("socks4Negotiate: unexpected reply; first octet is non-zero\n");
++ 		return -1;
++ 	}
++ 	
++ 	switch ( rep.s4.stat ) {
++ 		case SOCKS4_STA_GRANTED:
++ 		return 0; /* SUCCESS */
++ 
++ 		case SOCKS4_STA_FAILED:
++ 			errlogPrintf("socks4Negotiate: SOCKS4 server denied CONNECT request\n");
++ 		break;
++ 
++ 		case SOCKS4_STA_FAILED_NO_IDENTD:
++ 			errlogPrintf("socks4Negotiate: SOCKS4 server - no identd\n");
++ 		break;
++ 
++ 		case SOCKS4_STA_FAILED_IDENTD:
++ 			errlogPrintf("socks4Negotiate: SOCKS4 server - identd failure\n");
++ 		break;
++ 		
++ 		default:
++ 			errlogPrintf("socks4Negotiate: SOCKS4 server - UNKNOWN STATUS: %u\n", rep.s4.stat);
++ 		break;
++ 	}
++ 	
++ 	return -1;
++ }
++ 
++ static int
++ socks5Negotiate(SOCKET sockfd, const struct sockaddr *addr)
++ {
++ Socks5PreReq preReq;
++ Socks5PreRep preRep;
++ Socks5ReqU   req;
++ Socks5RepHdr rep;
++ int          len, chunk;
++ epicsUInt8   aln;
++ 
++ 	
++ 	if ( AF_INET != addr->sa_family
++ #ifdef USE_INET6_SUPPORT
++ 		&& AF_INET6 != addr->sa_family
++ #endif
++ 	   ) {
++ 		/* unsupported address */
++ 		return -1;
++ 	}
++ 
++ 	preReq.vers    = SOCKS5_VERS;
++ 	preReq.nmet    = OUR_SOCKS5_N_METH;
++ 	preReq.meth[0] = SOCKS5_AUTH_NONE;
++ 
++ 	/* Don't use sizeof() to compute length; structs are probably padded */
++ 	if ( sinkBuf( sockfd, &preReq, SOCKS5_PRE_REQ_HDR_LEN + preReq.nmet, "socks5Negotiate (stage 1: auth methods)") )
++ 		return -1;
++ 	
++ 	/* Don't use sizeof() to compute length; structs are probably padded */
++ 	if ( srcBuf( sockfd, &preRep, SOCKS5_PRE_REP_LEN, "socks5Negotiate (stage 1: auth methods)") )
++ 		return -1;
++ 
++ 	if ( SOCKS5_VERS != preRep.vers ) {
++ 		/* fail silently in case they want to try SOCKS4 */
++ #if 0
++ 		if ( !silent )
++ 			errlogPrintf("socks5Negotiate: unexpected version %i received\n", preRep.vers);
++ #endif
++ 		return -1;
++ 	}
++ 
++ 	if ( SOCKS5_AUTH_NONE != preRep.meth ) {
++ 		errlogPrintf("socks5Negotiate: AUTH_NONE rejected by proxy server (but we don't support authentication)\n");
++ 		return -1;
++ 	}
++ 
++ 	/* Now we're ready to send a real request */
++ 	req.s5.vers = SOCKS5_VERS;
++ 	req.s5.cmnd = SOCKS5_CMD_CONN;
++ 	req.s5.rsvd = SOCKS_NULL;
++ 
++ 	/* includes the port number */
++ 	len = SOCKS5_REQ_LEN;
++ 
++ 	/* compute size in bytes; don't rely on struct layout which may be padded */
++ 	if ( AF_INET == addr->sa_family ) {
++ 		req.s5.atyp = SOCKS5_ADDR_IPV4;
++ 		req.s5.addr.ipv4.addr = ((struct sockaddr_in*)addr)->sin_addr.s_addr;
++ 		req.s5.addr.ipv4.port = ((struct sockaddr_in*)addr)->sin_port;
++ 		len += 4;
++ 	}
++ #ifdef USE_INET6_SUPPORT
++ 	else { /* must be AF_INET6 as we already verified */
++ 		req.s5.atyp = SOCKS5_ADDR_IPV6;
++ 		/* address already in network byte order */
++ 		memcpy( req.s5.addr.ipv6.addr, ((struct sockaddr_in6*)addr)->sin6_addr.s6_addr, 16 );
++ 		req.s5.addr.ipv6.port = ((struct sockaddr_in6*)addr)->sin6_port;
++ 		len += 16;
++ 	}
++ #endif
++ 
++ 	if ( sinkBuf( sockfd, req.raw, len, "socks5Negotiate (sending request)" ) )
++ 		return -1;
++ 
++ 	/* slurp the header first -- don't use 'sizeof' in case the struct is padded */
++ 	if ( srcBuf( sockfd, &rep, SOCKS5_REP_HDR_LEN, "socks5Negotiate (receiving reply [header])" ) )
++ 		return -1;
++ 
++ 	/* verify */
++ 	if ( SOCKS5_VERS != rep.vers ) {
++ 		errlogPrintf("socks5Negotiate: server replied with version != 5 (%i) ??\n", rep.vers);
++ 		return -1;
++ 	}
++ 
++ 	switch ( rep.rply ) {
++ 		case SOCKS5_STA_GRANTED:
++ 			break;
++ 
++ 		case SOCKS5_STA_FAILED           :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 general failure\n");
++ 			return -1;
++ 
++ 		case SOCKS5_STA_RULEVIOLATION    :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 connection not allowed by ruleset\n");
++ 			return -1;
++ 
++ 		case SOCKS5_STA_NETUNREACH       :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 network unreachable\n");
++ 			return -1;
++ 
++ 		case SOCKS5_STA_HOSTUNREACH      :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 host unreachable\n");
++ 			return -1;
++ 
++ 		case SOCKS5_STA_CONNREFUSED      :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 connection refused by destination host\n");
++ 			return -1;
++ 
++ 		case SOCKS5_STA_TTLEXPIRED       :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 TTL expired\n");
++ 			return -1;
++ 
++ 		case SOCKS5_STA_PROTOERR         :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 command not supported / protocol error\n");
++ 			return -1;
++ 
++ 		case SOCKS5_STA_ATYPEUNSUPP      :
++ 			errlogPrintf("socks5Negotiate: SOCKS5 address type not supported\n");
++ 			return -1;
++ 
++ 		default:
++ 			errlogPrintf("socks5Negotiate: SOCKS5 unknown status error: %i\n", rep.rply);
++ 			return -1;
++ 	}
++ 
++ 	if ( SOCKS_NULL != rep.rsvd ) {
++ 		errlogPrintf("socks5Negotiate: malformed reply - reserved byte is %i (not 0x00)\n", rep.rsvd);
++ 		return -1;
++ 	}
++ 
++ 	len = 2; /* port number */
++ 
++ 	switch ( rep.atyp ) {
++ 		default:
++ 			errlogPrintf("socks5Negotiate: malformed reply - unknown address type %i\n", rep.atyp);
++ 			return -1;
++ 
++ 		case SOCKS5_ADDR_IPV4: len +=  4;
++ 			break;
++ 		case SOCKS5_ADDR_IPV6: len += 16;
++ 			break;
++ 
++ 		case SOCKS5_ADDR_DNS:
++ 			if ( srcBuf( sockfd, &aln, 1, "socks5Negotiate: getting DNS address length" ) )
++ 				return -1;
++ 			len += aln;
++ 			break;
++ 	}
++ 
++ 	/* slurp in the address info - just to clear the channel; we don't need it */
++ 	while ( len > 0 ) {
++ 		chunk = sizeof(rep);
++ 		if ( len < chunk )
++ 			chunk = len;
++ 		srcBuf( sockfd, req.raw, chunk, "socks5Negotiate: clearing channel" );
++ 
++ 		len -= chunk;
++ 	}
++ 
++ 	return 0;
++ }
++ 
++ int epicsShareAPI
++ epicsConnectViaProxy(SOCKET sockfd, const struct sockaddr *addr, osiSocklen_t addrlen)
++ {
++ const struct sockaddr *proxy;
++ int                    rval;
++ char                   buf[200];
++ int                    desVers;
++ 
++ 	if ( ! ( proxy = epicsSocksProxySelect(addr, &desVers) ) ) {
++ 		return connect( sockfd, addr, addrlen );
++ 	}
++ 
++ 	/* Connect to proxy */
++ 	if ( (rval = connect( sockfd, proxy, sizeof(*proxy)) ) ) {
++ 		epicsSocketConvertErrnoToString(buf, sizeof(buf));
++ 		errlogPrintf("epicsConnectViaProxy() -- Unable to connect to proxy: %s\n", buf);
++ 		return rval;
++ 	}
++ 
++ 	if ( SOCKS4_VERS != desVers ) {
++ 		/* Try socks5 */
++ 		if ( 0 == socks5Negotiate( sockfd, addr ) ) {
++ 			return 0;
++ 		}
++ 	}
++ 
++ 	if ( SOCKS5_VERS == desVers ) {
++ 		return -1;
++ 	}
++ 
++ 	/* Now try version 4 */
++ 
++ 	return socks4Negotiate( sockfd, addr );
++ }
+*** R3.15.5-1.0.13/src/libCom/osi/osiSock.h.orig	2018-04-17 15:20:46.492856981 -0700
+--- R3.15.5-1.0.13/src/libCom/osi/osiSock.h	2018-04-23 10:19:57.625726106 -0700
+***************
+*** 38,43 ****
+--- 38,45 ----
+  epicsShareFunc void epicsShareAPI 
+      epicsSocketEnableAddressUseForDatagramFanout ( SOCKET s );
+  
++ epicsShareFunc int epicsShareAPI epicsConnectViaProxy ( SOCKET sockfd, const struct sockaddr *, osiSocklen_t );
++ 
+  /*
+   * Fortunately, on most systems the combination of a shutdown of both
+   * directions and or a signal is sufficent to interrupt a blocking send,
+*** R3.15.5-1.0.13/src/libCom/osi/Makefile.orig	2018-04-23 10:21:10.499629391 -0700
+--- R3.15.5-1.0.13/src/libCom/osi/Makefile	2018-04-23 10:21:30.023067666 -0700
+***************
+*** 89,94 ****
+--- 89,95 ----
+  Com_SRCS += osiSock.c
+  Com_SRCS += systemCallIntMech.cpp
+  Com_SRCS += epicsSocketConvertErrnoToString.cpp
++ Com_SRCS += epicsConnectViaProxy.c
+  Com_SRCS += osdAssert.c
+  Com_SRCS += osdFindSymbol.c
+  Com_SRCS += osdInterrupt.c
+*** R3.15.5-1.0.13/src/libCom/env/envDefs.h.orig	2018-04-17 15:20:46.448858247 -0700
+--- R3.15.5-1.0.13/src/libCom/env/envDefs.h	2018-04-23 10:19:57.625726106 -0700
+***************
+*** 70,75 ****
+--- 70,76 ----
+  epicsShareExtern const ENV_PARAM EPICS_IOC_LOG_FILE_COMMAND;
+  epicsShareExtern const ENV_PARAM EPICS_CMD_PROTO_PORT;
+  epicsShareExtern const ENV_PARAM EPICS_AR_PORT;
++ epicsShareExtern const ENV_PARAM EPICS_SOCKS_PROXY;
+  epicsShareExtern const ENV_PARAM IOCSH_PS1;
+  epicsShareExtern const ENV_PARAM IOCSH_HISTSIZE;
+  
+*** R3.15.5-1.0.13/src/ca/client/tcpiiu.cpp.orig	2018-04-17 15:20:46.368860548 -0700
+--- R3.15.5-1.0.13/src/ca/client/tcpiiu.cpp	2018-04-23 10:19:57.625726106 -0700
+***************
+*** 611,617 ****
+          {
+              epicsGuardRelease < epicsMutex > unguard ( guard );
+              osiSockAddr tmp = this->iiu.address ();
+!             status = ::connect ( this->iiu.sock, 
+                              & tmp.sa, sizeof ( tmp.sa ) );
+          }
+  
+--- 611,617 ----
+          {
+              epicsGuardRelease < epicsMutex > unguard ( guard );
+              osiSockAddr tmp = this->iiu.address ();
+!             status = ::epicsConnectViaProxy ( this->iiu.sock, 
+                              & tmp.sa, sizeof ( tmp.sa ) );
+          }
+  
